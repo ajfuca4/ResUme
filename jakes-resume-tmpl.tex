@@ -116,61 +116,45 @@
     \href{https://github.com/...}{\underline{github.com/jake}}
 \end{center}
 
-\section{Education}
+\BLOCK{ for sec in sections }
+\BLOCK{ if sec.enabled }
+\section{\VAR{sec.title}}
+  \BLOCK{ if sec.entries }
   \resumeSubHeadingListStart
-    \resumeSubheading
-      {Southwestern University}{Georgetown, TX}
-      {Bachelor of Arts in Computer Science, Minor in Business}{Aug. 2018 -- May 2021}
-    \resumeSubheading
-      {Blinn College}{Bryan, TX}
-      {Associate's in Liberal Arts}{Aug. 2014 -- May 2018}
-  \resumeSubHeadingListEnd
-
-\section{Experience}
-  \resumeSubHeadingListStart
-
-    \BLOCK{ for job in experiences }
-    \resumeSubheading
-      {\VAR{job.title}}{\VAR{job.dates}}
-      {\VAR{job.company}}{\VAR{job.location}}
+    \BLOCK{ for item in sec.entries }
+    \BLOCK{ if item.enabled }
+      \BLOCK{ if item.field3 or item.field4 }
+      \resumeSubheading
+        {\VAR{item.field1}}{\VAR{item.field2}}
+        {\VAR{item.field3}}{\VAR{item.field4}}
+      \BLOCK{ else }
+      \resumeProjectHeading
+        {\textbf{\VAR{item.field1}}}{\VAR{item.field2}}
+      \BLOCK{ endif }
+      \BLOCK{ if item.bullets }
       \resumeItemListStart
-        \BLOCK{ for bullet in job.bullets }
+        \BLOCK{ for bullet in item.bullets }
         \resumeItem{\VAR{bullet}}
         \BLOCK{ endfor }
       \resumeItemListEnd
+      \BLOCK{ endif }
+    \BLOCK{ endif }
     \BLOCK{ endfor }
-
   \resumeSubHeadingListEnd
-
-\section{Projects}
-    \resumeSubHeadingListStart
-      \resumeProjectHeading
-          {\textbf{Gitlytics} $|$ \emph{Python, Flask, React, PostgreSQL, Docker}}{June 2020 -- Present}
-          \resumeItemListStart
-            \resumeItem{Developed a full-stack web application using with Flask serving a REST API with React as the frontend}
-            \resumeItem{Implemented GitHub OAuth to get data from user’s repositories}
-            \resumeItem{Visualized GitHub data to show collaboration}
-            \resumeItem{Used Celery and Redis for asynchronous tasks}
-          \resumeItemListEnd
-      \resumeProjectHeading
-          {\textbf{Simple Paintball} $|$ \emph{Spigot API, Java, Maven, TravisCI, Git}}{May 2018 -- May 2020}
-          \resumeItemListStart
-            \resumeItem{Developed a Minecraft server plugin to entertain kids during free time for a previous job}
-            \resumeItem{Published plugin to websites gaining 2K+ downloads and an average 4.5/5-star review}
-            \resumeItem{Implemented continuous delivery using TravisCI to build the plugin upon new a release}
-            \resumeItem{Collaborated with Minecraft server administrators to suggest features and get feedback about the plugin}
-          \resumeItemListEnd
-    \resumeSubHeadingListEnd
-
-\section{Technical Skills}
- \begin{itemize}[leftmargin=0.15in, label={}]
+  \BLOCK{ endif }
+  \BLOCK{ if sec.simple_lines }
+  \begin{itemize}[leftmargin=0.15in, label={}]
     \small{\item{
-     \textbf{Languages}{: Java, Python, C/C++, SQL (Postgres), JavaScript, HTML/CSS, R} \\
-     \textbf{Frameworks}{: React, Node.js, Flask, JUnit, WordPress, Material-UI, FastAPI} \\
-     \textbf{Developer Tools}{: Git, Docker, TravisCI, Google Cloud Platform, VS Code, Visual Studio, PyCharm, IntelliJ, Eclipse} \\
-     \textbf{Libraries}{: pandas, NumPy, Matplotlib}
+      \BLOCK{ for line in sec.simple_lines }
+      \BLOCK{ if line.enabled }
+      \textbf{\VAR{line.label}}{: \VAR{line.text}} \\
+      \BLOCK{ endif }
+      \BLOCK{ endfor }
     }}
- \end{itemize}
+  \end{itemize}
+  \BLOCK{ endif }
+\BLOCK{ endif }
+\BLOCK{ endfor }
 
 
 %-------------------------------------------
