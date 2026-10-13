@@ -548,11 +548,13 @@ def add_section_widget(sec_dict=None):
     if sec_dict is None:
         sec_dict = {"title": "New Section", "enabled": True, "entries": [], "simple_lines": []}
 
+    is_included = sec_dict.get("enabled", True)
+
     card = tk.LabelFrame(
         scrollable_frame,
         text="",
         padx=12,
-        pady=10,
+        pady=10 if is_included else 4,
         bd=2,
         relief="groove",
         bg="#ffffff"
@@ -561,9 +563,10 @@ def add_section_widget(sec_dict=None):
 
     # Top Bar of Section
     top = tk.Frame(card, bg="#ffffff")
-    top.pack(fill="x", expand=True, pady=(0, 6))
+    top.pack(fill="x", expand=True, pady=(0, 6 if is_included else 0))
 
-    var = tk.BooleanVar(value=sec_dict.get("enabled", True))
+    var = tk.BooleanVar(value=is_included)
+
     cb = tk.Checkbutton(top, variable=var, bg="#ffffff")
     cb.pack(side="left")
 
@@ -571,6 +574,15 @@ def add_section_widget(sec_dict=None):
     title_entry = tk.Entry(top, font=("Arial", 12, "bold"), width=24)
     title_entry.insert(0, sec_dict.get("title", "New Section"))
     title_entry.pack(side="left", padx=6)
+
+    status_lbl = tk.Label(
+        top,
+        text="" if is_included else "(Excluded)",
+        font=("Arial", 9, "italic"),
+        bg="#ffffff",
+        fg="#64748b"
+    )
+    status_lbl.pack(side="left", padx=4)
 
     sec_data = {
         "var": var,
@@ -620,12 +632,17 @@ def add_section_widget(sec_dict=None):
         command=lambda: remove_section(sec_data)
     ).pack(side="left", padx=(4, 0))
 
+    # Content body container (collapsible)
+    body_frame = tk.Frame(card, bg="#ffffff")
+    if is_included:
+        body_frame.pack(fill="x", expand=True)
+
     # Subheaders container
-    entries_container = tk.Frame(card, bg="#ffffff")
+    entries_container = tk.Frame(body_frame, bg="#ffffff")
     entries_container.pack(fill="x", expand=True)
 
     # Simple lines container
-    lines_container = tk.Frame(card, bg="#ffffff")
+    lines_container = tk.Frame(body_frame, bg="#ffffff")
     lines_container.pack(fill="x", expand=True)
 
     for item in sec_dict.get("entries", []):
@@ -635,7 +652,7 @@ def add_section_widget(sec_dict=None):
         add_line_widget(sec_data, lines_container, line)
 
     # Action bar for this section
-    sec_actions = tk.Frame(card, pady=6, bg="#ffffff")
+    sec_actions = tk.Frame(body_frame, pady=6, bg="#ffffff")
     sec_actions.pack(fill="x")
 
     tk.Button(
@@ -651,6 +668,21 @@ def add_section_widget(sec_dict=None):
         font=("Arial", 9),
         command=lambda: add_line_widget(sec_data, lines_container)
     ).pack(side="left")
+
+    def update_collapse_ui():
+        if var.get():
+            body_frame.pack(fill="x", expand=True)
+            card.configure(pady=10)
+            top.pack_configure(pady=(0, 6))
+            status_lbl.configure(text="")
+        else:
+            body_frame.pack_forget()
+            card.configure(pady=4)
+            top.pack_configure(pady=0)
+            status_lbl.configure(text="(Excluded)")
+        update_scroll()
+
+    cb.configure(command=update_collapse_ui)
 
     sections_widgets.append(sec_data)
     update_scroll()
