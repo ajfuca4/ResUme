@@ -491,6 +491,44 @@ def save_master_yaml(show_popup=True):
         messagebox.showerror("Save Error", f"Failed to save master.yaml:\n{e}")
         return False
 
+# Escape special characters that have special meaning in LaTeX
+def escape_latex(s):
+    if not isinstance(s, str):
+        return s
+    result = []
+    i = 0
+    n = len(s)
+    # Characters that must be escaped with a backslash in LaTeX
+    special_chars = {"%": r"\%", "&": r"\&", "$": r"\$", "#": r"\#", "_": r"\_"}
+    while i < n:
+        char = s[i]
+        if char == "\\":
+            # If already escaped (e.g. \% or \&), preserve it and avoid double-escaping
+            if i + 1 < n and s[i+1] in special_chars:
+                result.append(s[i:i+2])
+                i += 2
+                continue
+            else:
+                result.append(char)
+                i += 1
+                continue
+        elif char in special_chars:
+            result.append(special_chars[char])
+            i += 1
+        else:
+            result.append(char)
+            i += 1
+    return "".join(result)
+
+def escape_tree(obj):
+    if isinstance(obj, str):
+        return escape_latex(obj)
+    elif isinstance(obj, list):
+        return [escape_tree(x) for x in obj]
+    elif isinstance(obj, dict):
+        return {k: escape_tree(v) for k, v in obj.items()}
+    return obj
+
 # Generate PDF Compilation Logic
 def generate_pdf():
     # 1. Sync and save latest edits
@@ -527,6 +565,9 @@ def generate_pdf():
     final_data = master_data.copy()
     final_data["sections"] = compiled_sections
 
+    # Escape all LaTeX special characters (e.g., % -> \%, & -> \&, $ -> \$, _ -> \_, # -> \#)
+    final_data = escape_tree(final_data)
+
     # 3. Configure Jinja for LaTeX
     env = Environment(
         loader=FileSystemLoader('.'),
@@ -539,6 +580,7 @@ def generate_pdf():
         trim_blocks=True,
         autoescape=False
     )
+    env.filters['latex_escape'] = escape_latex
 
     try:
         template = env.get_template("jakes-resume-tmpl.tex")
