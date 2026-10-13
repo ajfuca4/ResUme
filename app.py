@@ -135,11 +135,7 @@ tk.Label(
     font=("Arial", 10),
     bg="#f8fafc",
     fg="#64748b"
-).pack(pady=(2, 6))
-
-# Top Toolbar
-top_toolbar = tk.Frame(header_frame, bg="#f8fafc")
-top_toolbar.pack(fill="x", padx=16, pady=4)
+).pack(pady=(2, 8))
 
 # Bottom Action Toolbar (docked cleanly to bottom before expandable center)
 action_frame = tk.Frame(root, pady=10, bg="#f1f5f9")
@@ -242,6 +238,77 @@ def update_scroll():
     scrollable_frame.update_idletasks()
     canvas.configure(scrollregion=canvas.bbox("all"))
 
+# Reordering helper functions
+def move_bullet_up(item_data, bullet_data):
+    bullets = item_data["bullets"]
+    idx = bullets.index(bullet_data)
+    if idx > 0:
+        prev_bullet = bullets[idx - 1]
+        bullets[idx - 1], bullets[idx] = bullets[idx], bullets[idx - 1]
+        bullet_data["frame"].pack(before=prev_bullet["frame"])
+        update_scroll()
+
+def move_bullet_down(item_data, bullet_data):
+    bullets = item_data["bullets"]
+    idx = bullets.index(bullet_data)
+    if idx < len(bullets) - 1:
+        next_bullet = bullets[idx + 1]
+        bullets[idx], bullets[idx + 1] = bullets[idx + 1], bullets[idx]
+        bullet_data["frame"].pack(after=next_bullet["frame"])
+        update_scroll()
+
+def move_item_up(sec_data, item_data):
+    entries = sec_data["entries"]
+    idx = entries.index(item_data)
+    if idx > 0:
+        prev_item = entries[idx - 1]
+        entries[idx - 1], entries[idx] = entries[idx], entries[idx - 1]
+        item_data["frame"].pack(before=prev_item["frame"])
+        update_scroll()
+
+def move_item_down(sec_data, item_data):
+    entries = sec_data["entries"]
+    idx = entries.index(item_data)
+    if idx < len(entries) - 1:
+        next_item = entries[idx + 1]
+        entries[idx], entries[idx + 1] = entries[idx + 1], entries[idx]
+        item_data["frame"].pack(after=next_item["frame"])
+        update_scroll()
+
+def move_line_up(sec_data, line_data):
+    lines = sec_data["simple_lines"]
+    idx = lines.index(line_data)
+    if idx > 0:
+        prev_line = lines[idx - 1]
+        lines[idx - 1], lines[idx] = lines[idx], lines[idx - 1]
+        line_data["frame"].pack(before=prev_line["frame"])
+        update_scroll()
+
+def move_line_down(sec_data, line_data):
+    lines = sec_data["simple_lines"]
+    idx = lines.index(line_data)
+    if idx < len(lines) - 1:
+        next_line = lines[idx + 1]
+        lines[idx], lines[idx + 1] = lines[idx + 1], lines[idx]
+        line_data["frame"].pack(after=next_line["frame"])
+        update_scroll()
+
+def move_section_up(sec_data):
+    idx = sections_widgets.index(sec_data)
+    if idx > 0:
+        prev_data = sections_widgets[idx - 1]
+        sections_widgets[idx - 1], sections_widgets[idx] = sections_widgets[idx], sections_widgets[idx - 1]
+        sec_data["frame"].pack(before=prev_data["frame"])
+        update_scroll()
+
+def move_section_down(sec_data):
+    idx = sections_widgets.index(sec_data)
+    if idx < len(sections_widgets) - 1:
+        next_data = sections_widgets[idx + 1]
+        sections_widgets[idx], sections_widgets[idx + 1] = sections_widgets[idx + 1], sections_widgets[idx]
+        sec_data["frame"].pack(after=next_data["frame"])
+        update_scroll()
+
 # Bullet management
 def remove_bullet(item_data, bullet_data):
     bullet_data["frame"].destroy()
@@ -262,16 +329,41 @@ def add_bullet_widget(item_data, parent_container, enabled=True, text=""):
 
     bullet_data = {"var": var, "text_widget": txt, "frame": row}
 
-    del_btn = tk.Button(
-        row,
+    btn_box = tk.Frame(row)
+    btn_box.pack(side="right", anchor="n")
+
+    tk.Button(
+        btn_box,
+        text="▲",
+        font=("Arial", 8),
+        bd=1,
+        relief="groove",
+        padx=2,
+        pady=0,
+        command=lambda: move_bullet_up(item_data, bullet_data)
+    ).pack(side="left", padx=1)
+
+    tk.Button(
+        btn_box,
+        text="▼",
+        font=("Arial", 8),
+        bd=1,
+        relief="groove",
+        padx=2,
+        pady=0,
+        command=lambda: move_bullet_down(item_data, bullet_data)
+    ).pack(side="left", padx=1)
+
+    tk.Button(
+        btn_box,
         text="✕",
         fg="#dc2626",
         bd=0,
-        padx=4,
+        padx=3,
+        pady=0,
         font=("Arial", 9),
         command=lambda: remove_bullet(item_data, bullet_data)
-    )
-    del_btn.pack(side="right", anchor="n")
+    ).pack(side="left", padx=(1, 0))
 
     item_data["bullets"].append(bullet_data)
     update_scroll()
@@ -309,15 +401,39 @@ def add_item_widget(sec_data, parent_container, item_dict=None):
 
     item_data = {"var": var, "e1": e1, "e2": e2, "frame": card, "bullets": []}
 
-    del_btn = tk.Button(
-        r1,
+    item_controls = tk.Frame(r1)
+    item_controls.pack(side="right")
+
+    tk.Button(
+        item_controls,
+        text="▲",
+        font=("Arial", 8),
+        bd=1,
+        relief="groove",
+        padx=3,
+        pady=0,
+        command=lambda: move_item_up(sec_data, item_data)
+    ).pack(side="left", padx=1)
+
+    tk.Button(
+        item_controls,
+        text="▼",
+        font=("Arial", 8),
+        bd=1,
+        relief="groove",
+        padx=3,
+        pady=0,
+        command=lambda: move_item_down(sec_data, item_data)
+    ).pack(side="left", padx=1)
+
+    tk.Button(
+        item_controls,
         text="✕ Delete Item",
         fg="#dc2626",
         bd=0,
         font=("Arial", 9),
         command=lambda: remove_item(sec_data, item_data)
-    )
-    del_btn.pack(side="right")
+    ).pack(side="left", padx=(2, 0))
 
     # Row 2: Field 3 (Left-hand subtext / Company/Degree) & Field 4 (Right-hand subtext / Location)
     r2 = tk.Frame(card)
@@ -384,15 +500,39 @@ def add_line_widget(sec_data, parent_container, line_dict=None):
 
     line_data = {"var": var, "label_entry": el, "text_entry": et, "frame": row}
 
-    del_btn = tk.Button(
-        row,
+    line_controls = tk.Frame(row)
+    line_controls.pack(side="right")
+
+    tk.Button(
+        line_controls,
+        text="▲",
+        font=("Arial", 8),
+        bd=1,
+        relief="groove",
+        padx=2,
+        pady=0,
+        command=lambda: move_line_up(sec_data, line_data)
+    ).pack(side="left", padx=1)
+
+    tk.Button(
+        line_controls,
+        text="▼",
+        font=("Arial", 8),
+        bd=1,
+        relief="groove",
+        padx=2,
+        pady=0,
+        command=lambda: move_line_down(sec_data, line_data)
+    ).pack(side="left", padx=1)
+
+    tk.Button(
+        line_controls,
         text="✕",
         fg="#dc2626",
         bd=0,
         font=("Arial", 9),
         command=lambda: remove_line(sec_data, line_data)
-    )
-    del_btn.pack(side="right")
+    ).pack(side="left", padx=(1, 0))
 
     sec_data["simple_lines"].append(line_data)
     update_scroll()
@@ -440,16 +580,45 @@ def add_section_widget(sec_dict=None):
         "simple_lines": []
     }
 
-    del_btn = tk.Button(
-        top,
+    sec_controls = tk.Frame(top, bg="#ffffff")
+    sec_controls.pack(side="right")
+
+    tk.Button(
+        sec_controls,
+        text="▲ Move Up",
+        font=("Arial", 9),
+        bd=1,
+        relief="groove",
+        bg="#f1f5f9",
+        fg="#334155",
+        padx=4,
+        pady=1,
+        command=lambda: move_section_up(sec_data)
+    ).pack(side="left", padx=2)
+
+    tk.Button(
+        sec_controls,
+        text="▼ Move Down",
+        font=("Arial", 9),
+        bd=1,
+        relief="groove",
+        bg="#f1f5f9",
+        fg="#334155",
+        padx=4,
+        pady=1,
+        command=lambda: move_section_down(sec_data)
+    ).pack(side="left", padx=2)
+
+    tk.Button(
+        sec_controls,
         text="✕ Delete Section",
         fg="#dc2626",
         bd=0,
         font=("Arial", 9),
         bg="#ffffff",
+        padx=4,
         command=lambda: remove_section(sec_data)
-    )
-    del_btn.pack(side="right")
+    ).pack(side="left", padx=(4, 0))
 
     # Subheaders container
     entries_container = tk.Frame(card, bg="#ffffff")
@@ -777,41 +946,7 @@ def prompt_new_section():
     entry.bind("<Return>", lambda e: on_ok())
     entry.bind("<Escape>", lambda e: on_cancel())
 
-# Add toolbar buttons to top
-tk.Button(
-    top_toolbar,
-    text="+ Add New Section",
-    font=("Arial", 10, "bold"),
-    bg="#10b981",
-    fg="#047857",
-    padx=10,
-    pady=3,
-    command=prompt_new_section
-).pack(side="left", padx=(0, 10))
 
-tk.Button(
-    top_toolbar,
-    text="💾 Save to master.yaml",
-    font=("Arial", 10, "bold"),
-    padx=10,
-    pady=3,
-    command=lambda: save_master_yaml(show_popup=True)
-).pack(side="left", padx=(0, 10))
-
-tk.Button(
-    top_toolbar,
-    text="📄 Generate Resume PDF",
-    font=("Arial", 10, "bold"),
-    bg="#2563eb",
-    fg="#1d4ed8",
-    padx=12,
-    pady=3,
-    command=generate_pdf
-).pack(side="right")
-
-# Bottom Action Toolbar
-action_frame = tk.Frame(root, pady=10, bg="#f1f5f9")
-action_frame.pack(fill="x", side="bottom")
 
 tk.Button(
     action_frame,
