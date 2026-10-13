@@ -1,7 +1,9 @@
 import tkinter as tk
-from tkinter import messagebox, simpledialog
+from tkinter import messagebox
 import yaml
 import os
+import sys
+import shutil
 from jinja2 import Environment, FileSystemLoader
 
 # 1. Load or initialize master YAML file
@@ -139,16 +141,22 @@ tk.Label(
 top_toolbar = tk.Frame(header_frame, bg="#f8fafc")
 top_toolbar.pack(fill="x", padx=16, pady=4)
 
-# Scrollable canvas for dynamic resume components
+# Bottom Action Toolbar (docked cleanly to bottom before expandable center)
+action_frame = tk.Frame(root, pady=10, bg="#f1f5f9")
+action_frame.pack(side="bottom", fill="x")
+
+# Scrollable canvas for dynamic resume components (occupies all remaining space)
 canvas_container = tk.Frame(root)
-canvas = tk.Canvas(canvas_container, borderwidth=0, highlightthickness=0)
+canvas_container.pack(side="top", fill="both", expand=True, padx=12, pady=4)
+
+canvas = tk.Canvas(canvas_container, borderwidth=0, highlightthickness=0, yscrollincrement=1)
 scrollbar = tk.Scrollbar(canvas_container, orient="vertical", command=canvas.yview)
 scrollable_frame = tk.Frame(canvas)
 
-scrollable_frame.bind(
-    "<Configure>",
-    lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-)
+def _on_frame_configure(e):
+    canvas.configure(scrollregion=canvas.bbox("all"))
+
+scrollable_frame.bind("<Configure>", _on_frame_configure)
 
 canvas_window = canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
 
@@ -158,17 +166,74 @@ def on_canvas_configure(event):
 canvas.bind("<Configure>", on_canvas_configure)
 canvas.configure(yscrollcommand=scrollbar.set)
 
-canvas_container.pack(fill="both", expand=True, padx=12, pady=4)
 canvas.pack(side="left", fill="both", expand=True)
 scrollbar.pack(side="right", fill="y")
 
-def _on_mousewheel(event):
-    if event.num == 5 or event.delta < 0:
-        canvas.yview_scroll(1, "units")
-    elif event.num == 4 or event.delta > 0:
-        canvas.yview_scroll(-1, "units")
+# 1. macOS Trackpad Two-Finger Scrolling (<TouchpadScroll>) in Tk 9 Aqua
+def _on_touchpad(event):
+    delta = event.delta
+    # In Tk 9 Aqua, dxdy is packed into delta: deltaX = dxdy >> 16, deltaY = low 16 bits signed
+    low = delta & 0xFFFF
+    dy = low if low < 0x8000 else low - 0x10000
+    if dy != 0:
+        # yscrollincrement=1 makes units equal to pixels for smooth 1:1 trackpad scrolling
+        canvas.yview_scroll(-dy, "units")
+    return "break"
 
+# 2. Traditional Mouse Wheel Scrolling (<MouseWheel>)
+def _on_mousewheel(event):
+    if sys.platform == "darwin":
+        delta = event.delta
+        if abs(delta) >= 120:
+            units = -int((delta / 120) * 35)
+        else:
+            units = -int(delta * 4)
+        if units == 0 and delta != 0:
+            units = -4 if delta > 0 else 4
+        canvas.yview_scroll(units, "units")
+    elif event.num == 5 or event.delta < 0:
+        canvas.yview_scroll(25, "units")
+    elif event.num == 4 or event.delta > 0:
+        canvas.yview_scroll(-25, "units")
+    return "break"
+
+# Bind across ALL widget classes so trackpad gestures scroll the page even when hovering over text boxes/entries
+for widget_class in ("Text", "Entry", "Label", "Button", "Checkbutton", "Frame", "LabelFrame", "Canvas"):
+    root.bind_class(widget_class, "<TouchpadScroll>", _on_touchpad)
+    root.bind_class(widget_class, "<MouseWheel>", _on_mousewheel)
+    root.bind_class(widget_class, "<Button-4>", _on_mousewheel)
+    root.bind_class(widget_class, "<Button-5>", _on_mousewheel)
+
+root.bind_all("<TouchpadScroll>", _on_touchpad)
 root.bind_all("<MouseWheel>", _on_mousewheel)
+root.bind_all("<Button-4>", _on_mousewheel)
+root.bind_all("<Button-5>", _on_mousewheel)
+
+# Keyboard navigation (PageUp, PageDown, Home, End, Up, Down)
+def _on_key_scroll(event):
+    widget = root.focus_get()
+    in_text = widget and widget.winfo_class() in ("Text", "Entry")
+
+    if event.keysym == "Next":
+        canvas.yview_scroll(250, "units")
+        return "break"
+    elif event.keysym == "Prior":
+        canvas.yview_scroll(-250, "units")
+        return "break"
+    elif event.keysym == "Home" and not in_text:
+        canvas.yview_moveto(0)
+        return "break"
+    elif event.keysym == "End" and not in_text:
+        canvas.yview_moveto(1)
+        return "break"
+    elif event.keysym == "Down" and not in_text:
+        canvas.yview_scroll(40, "units")
+        return "break"
+    elif event.keysym == "Up" and not in_text:
+        canvas.yview_scroll(-40, "units")
+        return "break"
+
+root.bind_all("<Key>", _on_key_scroll)
 
 # State tracking for all UI widgets
 sections_widgets = []
@@ -424,6 +489,7 @@ def add_section_widget(sec_dict=None):
 # Build initial sections in UI
 for sec in master_data.get("sections", []):
     add_section_widget(sec)
+update_scroll()
 
 # Extract data tree from UI
 def extract_sections_from_ui():
@@ -569,8 +635,9 @@ def generate_pdf():
     final_data = escape_tree(final_data)
 
     # 3. Configure Jinja for LaTeX
+    script_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else "."
     env = Environment(
-        loader=FileSystemLoader('.'),
+        loader=FileSystemLoader(script_dir),
         block_start_string=r'\BLOCK{',
         block_end_string='}',
         variable_start_string=r'\VAR{',
@@ -586,32 +653,129 @@ def generate_pdf():
         template = env.get_template("jakes-resume-tmpl.tex")
         rendered_tex = template.render(final_data)
 
-        with open("output.tex", "w", encoding="utf-8") as f:
+        # Target user's Downloads folder
+        downloads_dir = os.path.expanduser("~/Downloads")
+        os.makedirs(downloads_dir, exist_ok=True)
+        tex_path = os.path.join(downloads_dir, "output.tex")
+        pdf_path = os.path.join(downloads_dir, "output.pdf")
+
+        # Save to ~/Downloads/output.tex
+        with open(tex_path, "w", encoding="utf-8") as f:
             f.write(rendered_tex)
 
-        # Trigger LaTeX compiler
-        exit_code = os.system("pdflatex output.tex")
-        if exit_code == 0:
-            messagebox.showinfo("Success", "Resume compiled successfully to output.pdf!\n(master.yaml also updated)")
-        else:
-            if os.system("which pdflatex > /dev/null 2>&1") != 0:
-                messagebox.showwarning(
-                    "LaTeX Output Saved",
-                    "output.tex was created successfully with your selected sections!\n\n"
-                    "Note: 'pdflatex' was not found on your system.\n"
-                    "To generate PDFs directly, install BasicTeX with:\n"
-                    "brew install --cask basictex"
+        # Remove any stale output files in root directory to avoid confusion
+        for stale in ["output.tex", "output.pdf"]:
+            if os.path.exists(stale):
+                try:
+                    os.remove(stale)
+                except OSError:
+                    pass
+
+        # Trigger LaTeX compiler if available
+        if shutil.which("pdflatex"):
+            exit_code = os.system(f'pdflatex -interaction=nonstopmode -output-directory "{downloads_dir}" "{tex_path}"')
+
+            # Clean up auxiliary files from downloads folder
+            for ext in [".aux", ".out"]:
+                aux_file = os.path.join(downloads_dir, f"output{ext}")
+                if os.path.exists(aux_file):
+                    try:
+                        os.remove(aux_file)
+                    except OSError:
+                        pass
+
+            if exit_code == 0:
+                log_file = os.path.join(downloads_dir, "output.log")
+                if os.path.exists(log_file):
+                    try:
+                        os.remove(log_file)
+                    except OSError:
+                        pass
+                messagebox.showinfo(
+                    "Success",
+                    f"Resume compiled successfully to your Downloads folder!\n\n"
+                    f"PDF: {pdf_path}\n"
+                    f"(master.yaml also updated)"
                 )
             else:
-                messagebox.showerror("Compilation Error", "LaTeX compilation failed. Check output.log for details.")
+                messagebox.showerror(
+                    "Compilation Error",
+                    f"LaTeX compilation failed.\n"
+                    f"Source saved to: {tex_path}\n"
+                    f"Check {os.path.join(downloads_dir, 'output.log')} for details."
+                )
+        else:
+            messagebox.showwarning(
+                "LaTeX Output Saved",
+                f"output.tex was created successfully and saved to your Downloads folder:\n{tex_path}\n\n"
+                "Note: 'pdflatex' was not found on your system.\n"
+                "To generate PDFs directly, install BasicTeX with:\n"
+                "brew install --cask basictex"
+            )
     except Exception as e:
         messagebox.showerror("Error", f"Failed to generate resume:\n{e}")
 
-# Function to add new custom section
+# Function to add new custom section (custom modal dialog compatible with Tk 9 on macOS)
 def prompt_new_section():
-    title = simpledialog.askstring("Add Section", "Enter the title for the new section:")
-    if title and title.strip():
-        add_section_widget({"title": title.strip(), "enabled": True, "entries": [], "simple_lines": []})
+    dialog = tk.Toplevel(root)
+    dialog.title("Add New Section")
+    dialog.geometry("400x160")
+    dialog.resizable(False, False)
+    dialog.transient(root)
+    dialog.grab_set()
+
+    # Center relative to root window
+    root.update_idletasks()
+    x = root.winfo_x() + (root.winfo_width() // 2) - 200
+    y = root.winfo_y() + (root.winfo_height() // 2) - 80
+    dialog.geometry(f"+{max(0, x)}+{max(0, y)}")
+
+    tk.Label(
+        dialog,
+        text="Enter the title for the new section:",
+        font=("Arial", 11, "bold")
+    ).pack(pady=(20, 8))
+
+    entry = tk.Entry(dialog, font=("Arial", 11), width=30)
+    entry.pack(pady=4)
+    entry.focus_set()
+
+    def on_ok():
+        title = entry.get().strip()
+        if title:
+            add_section_widget({"title": title, "enabled": True, "entries": [], "simple_lines": []})
+            update_scroll()
+            canvas.yview_moveto(1.0)
+        dialog.destroy()
+
+    def on_cancel():
+        dialog.destroy()
+
+    btn_frame = tk.Frame(dialog)
+    btn_frame.pack(pady=14)
+
+    ok_btn = tk.Button(
+        btn_frame,
+        text="Add Section",
+        font=("Arial", 10, "bold"),
+        bg="#10b981",
+        fg="#047857",
+        padx=12,
+        command=on_ok
+    )
+    ok_btn.pack(side="left", padx=6)
+
+    cancel_btn = tk.Button(
+        btn_frame,
+        text="Cancel",
+        font=("Arial", 10),
+        padx=8,
+        command=on_cancel
+    )
+    cancel_btn.pack(side="left", padx=6)
+
+    entry.bind("<Return>", lambda e: on_ok())
+    entry.bind("<Escape>", lambda e: on_cancel())
 
 # Add toolbar buttons to top
 tk.Button(
