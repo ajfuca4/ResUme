@@ -238,6 +238,109 @@ def update_scroll():
     scrollable_frame.update_idletasks()
     canvas.configure(scrollregion=canvas.bbox("all"))
 
+# Extract data tree from UI
+def extract_sections_from_ui():
+    sections_list = []
+    for s in sections_widgets:
+        sec_title = s["title_entry"].get().strip()
+        sec_enabled = s["var"].get()
+
+        entries_list = []
+        for it in s["entries"]:
+            it_enabled = it["var"].get()
+            f1 = it["e1"].get().strip()
+            f2 = it["e2"].get().strip()
+            f3 = it["e3"].get().strip()
+            f4 = it["e4"].get().strip()
+
+            bullets_list = []
+            for b in it["bullets"]:
+                b_text = b["text_widget"].get("1.0", "end-1c").strip()
+                b_enabled = b["var"].get()
+                if b_text:
+                    bullets_list.append({"enabled": b_enabled, "text": b_text})
+
+            if f1 or f2 or f3 or f4 or bullets_list:
+                entries_list.append({
+                    "enabled": it_enabled,
+                    "field1": f1,
+                    "field2": f2,
+                    "field3": f3,
+                    "field4": f4,
+                    "bullets": bullets_list
+                })
+
+        simple_lines_list = []
+        for l in s["simple_lines"]:
+            lbl = l["label_entry"].get().strip()
+            txt = l["text_entry"].get().strip()
+            l_enabled = l["var"].get()
+            if lbl or txt:
+                simple_lines_list.append({
+                    "enabled": l_enabled,
+                    "label": lbl,
+                    "text": txt
+                })
+
+        sections_list.append({
+            "title": sec_title,
+            "enabled": sec_enabled,
+            "entries": entries_list,
+            "simple_lines": simple_lines_list
+        })
+    return sections_list
+
+# Save to master.yaml
+def save_master_yaml(show_popup=True):
+    master_data["sections"] = extract_sections_from_ui()
+
+    try:
+        with open("master.yaml", "w", encoding="utf-8") as f:
+            yaml.dump(master_data, f, sort_keys=False, allow_unicode=True)
+        if show_popup:
+            messagebox.showinfo("Saved", "All sections, subheaders, and bullets saved to master.yaml!")
+        return True
+    except Exception as e:
+        messagebox.showerror("Save Error", f"Failed to save master.yaml:\n{e}")
+        return False
+
+_is_ui_initialized = False
+
+# Autosave when any field loses focus (clicked away / deselected)
+def on_field_focus_out(event):
+    if not _is_ui_initialized:
+        return
+    try:
+        if event.widget.winfo_toplevel() == root:
+            save_master_yaml(show_popup=False)
+    except Exception:
+        pass
+
+# Ensure clicking anywhere outside an active text/entry field unfocuses it
+def on_global_click(event):
+    if not _is_ui_initialized:
+        return
+    widget = event.widget
+    focused = root.focus_get()
+    if focused and focused.winfo_class() in ("Entry", "Text"):
+        if widget != focused and widget.winfo_class() not in ("Entry", "Text"):
+            root.focus_set()
+
+# Enter key unfocuses entry and triggers save
+def on_entry_return(event):
+    if not _is_ui_initialized:
+        return
+    try:
+        if event.widget.winfo_toplevel() == root:
+            root.focus_set()
+    except Exception:
+        pass
+
+root.bind_class("Entry", "<FocusOut>", on_field_focus_out, add="+")
+root.bind_class("Text", "<FocusOut>", on_field_focus_out, add="+")
+root.bind_class("Entry", "<Return>", on_entry_return, add="+")
+root.bind_all("<Button-1>", on_global_click, add="+")
+
 # Reordering helper functions
 def move_bullet_up(item_data, bullet_data):
     bullets = item_data["bullets"]
@@ -246,6 +349,8 @@ def move_bullet_up(item_data, bullet_data):
         prev_bullet = bullets[idx - 1]
         bullets[idx - 1], bullets[idx] = bullets[idx], bullets[idx - 1]
         bullet_data["frame"].pack(before=prev_bullet["frame"])
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
         update_scroll()
 
 def move_bullet_down(item_data, bullet_data):
@@ -255,6 +360,8 @@ def move_bullet_down(item_data, bullet_data):
         next_bullet = bullets[idx + 1]
         bullets[idx], bullets[idx + 1] = bullets[idx + 1], bullets[idx]
         bullet_data["frame"].pack(after=next_bullet["frame"])
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
         update_scroll()
 
 def move_item_up(sec_data, item_data):
@@ -264,6 +371,8 @@ def move_item_up(sec_data, item_data):
         prev_item = entries[idx - 1]
         entries[idx - 1], entries[idx] = entries[idx], entries[idx - 1]
         item_data["frame"].pack(before=prev_item["frame"])
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
         update_scroll()
 
 def move_item_down(sec_data, item_data):
@@ -273,6 +382,8 @@ def move_item_down(sec_data, item_data):
         next_item = entries[idx + 1]
         entries[idx], entries[idx + 1] = entries[idx + 1], entries[idx]
         item_data["frame"].pack(after=next_item["frame"])
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
         update_scroll()
 
 def move_line_up(sec_data, line_data):
@@ -282,6 +393,8 @@ def move_line_up(sec_data, line_data):
         prev_line = lines[idx - 1]
         lines[idx - 1], lines[idx] = lines[idx], lines[idx - 1]
         line_data["frame"].pack(before=prev_line["frame"])
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
         update_scroll()
 
 def move_line_down(sec_data, line_data):
@@ -291,6 +404,8 @@ def move_line_down(sec_data, line_data):
         next_line = lines[idx + 1]
         lines[idx], lines[idx + 1] = lines[idx + 1], lines[idx]
         line_data["frame"].pack(after=next_line["frame"])
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
         update_scroll()
 
 def move_section_up(sec_data):
@@ -299,6 +414,8 @@ def move_section_up(sec_data):
         prev_data = sections_widgets[idx - 1]
         sections_widgets[idx - 1], sections_widgets[idx] = sections_widgets[idx], sections_widgets[idx - 1]
         sec_data["frame"].pack(before=prev_data["frame"])
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
         update_scroll()
 
 def move_section_down(sec_data):
@@ -307,12 +424,16 @@ def move_section_down(sec_data):
         next_data = sections_widgets[idx + 1]
         sections_widgets[idx], sections_widgets[idx + 1] = sections_widgets[idx + 1], sections_widgets[idx]
         sec_data["frame"].pack(after=next_data["frame"])
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
         update_scroll()
 
 # Bullet management
 def remove_bullet(item_data, bullet_data):
     bullet_data["frame"].destroy()
     item_data["bullets"].remove(bullet_data)
+    if _is_ui_initialized:
+        save_master_yaml(show_popup=False)
     update_scroll()
 
 def add_bullet_widget(item_data, parent_container, enabled=True, text=""):
@@ -320,7 +441,11 @@ def add_bullet_widget(item_data, parent_container, enabled=True, text=""):
     row.pack(fill="x", expand=True, pady=2, padx=(12, 0))
 
     var = tk.BooleanVar(value=enabled)
-    cb = tk.Checkbutton(row, variable=var)
+    cb = tk.Checkbutton(
+        row,
+        variable=var,
+        command=lambda: save_master_yaml(show_popup=False) if _is_ui_initialized else None
+    )
     cb.pack(side="left", anchor="n")
 
     txt = tk.Text(row, height=2, wrap="word", font=("Arial", 10), relief="solid", bd=1)
@@ -372,6 +497,8 @@ def add_bullet_widget(item_data, parent_container, enabled=True, text=""):
 def remove_item(sec_data, item_data):
     item_data["frame"].destroy()
     sec_data["entries"].remove(item_data)
+    if _is_ui_initialized:
+        save_master_yaml(show_popup=False)
     update_scroll()
 
 def add_item_widget(sec_data, parent_container, item_dict=None):
@@ -387,7 +514,11 @@ def add_item_widget(sec_data, parent_container, item_dict=None):
     r1 = tk.Frame(card)
     r1.pack(fill="x", expand=True, pady=1)
 
-    tk.Checkbutton(r1, variable=var).pack(side="left")
+    tk.Checkbutton(
+        r1,
+        variable=var,
+        command=lambda: save_master_yaml(show_popup=False) if _is_ui_initialized else None
+    ).pack(side="left")
 
     tk.Label(r1, text="Field 1 (Title/Header):", font=("Arial", 9, "bold")).pack(side="left")
     e1 = tk.Entry(r1, font=("Arial", 10, "bold"))
@@ -476,6 +607,8 @@ def add_item_widget(sec_data, parent_container, item_dict=None):
 def remove_line(sec_data, line_data):
     line_data["frame"].destroy()
     sec_data["simple_lines"].remove(line_data)
+    if _is_ui_initialized:
+        save_master_yaml(show_popup=False)
     update_scroll()
 
 def add_line_widget(sec_data, parent_container, line_dict=None):
@@ -486,7 +619,11 @@ def add_line_widget(sec_data, parent_container, line_dict=None):
     row.pack(fill="x", expand=True, padx=4)
 
     var = tk.BooleanVar(value=line_dict.get("enabled", True))
-    tk.Checkbutton(row, variable=var).pack(side="left")
+    tk.Checkbutton(
+        row,
+        variable=var,
+        command=lambda: save_master_yaml(show_popup=False) if _is_ui_initialized else None
+    ).pack(side="left")
 
     tk.Label(row, text="Title/Label:", font=("Arial", 9, "bold")).pack(side="left")
     el = tk.Entry(row, width=18, font=("Arial", 10, "bold"))
@@ -542,6 +679,8 @@ def remove_section(sec_data):
     if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete section '{sec_data['title_entry'].get()}'?"):
         sec_data["frame"].destroy()
         sections_widgets.remove(sec_data)
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
         update_scroll()
 
 def add_section_widget(sec_dict=None):
@@ -680,6 +819,7 @@ def add_section_widget(sec_dict=None):
             card.configure(pady=4)
             top.pack_configure(pady=0)
             status_lbl.configure(text="(Excluded)")
+            save_master_yaml(show_popup=False)
         update_scroll()
 
     cb.configure(command=update_collapse_ui)
@@ -691,72 +831,7 @@ def add_section_widget(sec_dict=None):
 for sec in master_data.get("sections", []):
     add_section_widget(sec)
 update_scroll()
-
-# Extract data tree from UI
-def extract_sections_from_ui():
-    sections_list = []
-    for s in sections_widgets:
-        sec_title = s["title_entry"].get().strip()
-        sec_enabled = s["var"].get()
-
-        entries_list = []
-        for it in s["entries"]:
-            it_enabled = it["var"].get()
-            f1 = it["e1"].get().strip()
-            f2 = it["e2"].get().strip()
-            f3 = it["e3"].get().strip()
-            f4 = it["e4"].get().strip()
-
-            bullets_list = []
-            for b in it["bullets"]:
-                b_text = b["text_widget"].get("1.0", "end-1c").strip()
-                b_enabled = b["var"].get()
-                if b_text:
-                    bullets_list.append({"enabled": b_enabled, "text": b_text})
-
-            if f1 or f2 or f3 or f4 or bullets_list:
-                entries_list.append({
-                    "enabled": it_enabled,
-                    "field1": f1,
-                    "field2": f2,
-                    "field3": f3,
-                    "field4": f4,
-                    "bullets": bullets_list
-                })
-
-        simple_lines_list = []
-        for l in s["simple_lines"]:
-            lbl = l["label_entry"].get().strip()
-            txt = l["text_entry"].get().strip()
-            l_enabled = l["var"].get()
-            if lbl or txt:
-                simple_lines_list.append({
-                    "enabled": l_enabled,
-                    "label": lbl,
-                    "text": txt
-                })
-
-        sections_list.append({
-            "title": sec_title,
-            "enabled": sec_enabled,
-            "entries": entries_list,
-            "simple_lines": simple_lines_list
-        })
-    return sections_list
-
-# Save to master.yaml
-def save_master_yaml(show_popup=True):
-    master_data["sections"] = extract_sections_from_ui()
-
-    try:
-        with open("master.yaml", "w", encoding="utf-8") as f:
-            yaml.dump(master_data, f, sort_keys=False, allow_unicode=True)
-        if show_popup:
-            messagebox.showinfo("Saved", "All sections, subheaders, and bullets saved to master.yaml!")
-        return True
-    except Exception as e:
-        messagebox.showerror("Save Error", f"Failed to save master.yaml:\n{e}")
-        return False
+_is_ui_initialized = True
 
 # Escape special characters that have special meaning in LaTeX
 def escape_latex(s):
