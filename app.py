@@ -4,8 +4,10 @@ import yaml
 import os
 import sys
 import shutil
+import subprocess
 from jinja2 import Environment, FileSystemLoader
 from ui_widgets import *  # dark theme palette, fonts, RoundedCard, PillButton, Toggle, inputs
+from pdf_preview import PDFPreviewWindow
 
 # 1. Load or initialize master YAML file
 def load_data():
@@ -947,13 +949,36 @@ def normalize_url(url):
         return f"mailto:{url}"
     return f"https://{url}"
 
-# Generate PDF Compilation Logic
-def generate_pdf():
-    # 1. Sync and save latest edits
-    if not save_master_yaml(show_popup=False):
-        return
+# ---------------------------------------------------------------------------
+# LaTeX Compilation & Preview Logic
+# ---------------------------------------------------------------------------
+preview_window = None
 
-    # 2. Build filtered sections for LaTeX (only checked items and bullets)
+def find_latex_compiler():
+    """Locate tectonic or pdflatex across PATH and standard macOS locations."""
+    # 1. Tectonic (modern, auto-downloads packages)
+    for path in [
+        shutil.which("tectonic"),
+        "/opt/homebrew/bin/tectonic",
+        "/usr/local/bin/tectonic"
+    ]:
+        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+            return ("tectonic", path)
+
+    # 2. pdflatex (MacTeX / BasicTeX)
+    for path in [
+        shutil.which("pdflatex"),
+        "/Library/TeX/texbin/pdflatex",
+        "/usr/local/bin/pdflatex",
+        "/opt/homebrew/bin/pdflatex"
+    ]:
+        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+            return ("pdflatex", path)
+
+    return (None, None)
+
+def render_latex_source():
+    """Render current UI state through Jinja2 to ~/Downloads/output.tex."""
     ui_sections = extract_sections_from_ui()
     compiled_sections = []
 
@@ -984,11 +1009,9 @@ def generate_pdf():
     final_data["sections"] = compiled_sections
     final_data.pop("links", None)
 
-    # Escape all LaTeX special characters (e.g., % -> \%, & -> \&, $ -> \$, _ -> \_, # -> \#)
+    # Escape all LaTeX special characters
     final_data = escape_tree(final_data)
 
-    # Header links: identifier is escaped as normal text; URL only needs % and #
-    # escaped (hyperref's \href handles _ & ~ etc. itself)
     final_data["links"] = [
         {
             "label": escape_latex(l.get("label", "") or l.get("url", "")),
@@ -998,7 +1021,6 @@ def generate_pdf():
         if l.get("enabled", True) and (l.get("label") or l.get("url"))
     ]
 
-    # 3. Configure Jinja for LaTeX
     script_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else "."
     env = Environment(
         loader=FileSystemLoader(script_dir),
@@ -1013,33 +1035,41 @@ def generate_pdf():
     )
     env.filters['latex_escape'] = escape_latex
 
+    template = env.get_template("jakes-resume-tmpl.tex")
+    rendered_tex = template.render(final_data)
+
+    downloads_dir = os.path.expanduser("~/Downloads")
+    os.makedirs(downloads_dir, exist_ok=True)
+    tex_path = os.path.join(downloads_dir, "output.tex")
+    pdf_path = os.path.join(downloads_dir, "output.pdf")
+
+    with open(tex_path, "w", encoding="utf-8") as f:
+        f.write(rendered_tex)
+
+    return tex_path, pdf_path, downloads_dir
+
+def compile_resume_pdf():
+    """Compile ~/Downloads/output.tex to output.pdf. Returns (success, pdf_path, err_msg)."""
+    tex_path, pdf_path, downloads_dir = render_latex_source()
+    compiler_type, compiler_bin = find_latex_compiler()
+
+    if not compiler_type:
+        return (False, pdf_path, "NO_COMPILER")
+
     try:
-        template = env.get_template("jakes-resume-tmpl.tex")
-        rendered_tex = template.render(final_data)
+        if compiler_type == "tectonic":
+            cmd = [compiler_bin, "-X", "compile", "--outdir", downloads_dir, tex_path]
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            if proc.returncode == 0 and os.path.exists(pdf_path):
+                return (True, pdf_path, None)
+            err = proc.stderr.strip() or proc.stdout.strip()
+            return (False, pdf_path, err or "Tectonic compilation failed.")
 
-        # Target user's Downloads folder
-        downloads_dir = os.path.expanduser("~/Downloads")
-        os.makedirs(downloads_dir, exist_ok=True)
-        tex_path = os.path.join(downloads_dir, "output.tex")
-        pdf_path = os.path.join(downloads_dir, "output.pdf")
+        elif compiler_type == "pdflatex":
+            cmd = [compiler_bin, "-interaction=nonstopmode", "-output-directory", downloads_dir, tex_path]
+            proc = subprocess.run(cmd, capture_output=True, text=True)
 
-        # Save to ~/Downloads/output.tex
-        with open(tex_path, "w", encoding="utf-8") as f:
-            f.write(rendered_tex)
-
-        # Remove any stale output files in root directory to avoid confusion
-        for stale in ["output.tex", "output.pdf"]:
-            if os.path.exists(stale):
-                try:
-                    os.remove(stale)
-                except OSError:
-                    pass
-
-        # Trigger LaTeX compiler if available
-        if shutil.which("pdflatex"):
-            exit_code = os.system(f'pdflatex -interaction=nonstopmode -output-directory "{downloads_dir}" "{tex_path}"')
-
-            # Clean up auxiliary files from downloads folder
+            # Clean auxiliary files
             for ext in [".aux", ".out"]:
                 aux_file = os.path.join(downloads_dir, f"output{ext}")
                 if os.path.exists(aux_file):
@@ -1048,36 +1078,129 @@ def generate_pdf():
                     except OSError:
                         pass
 
-            if exit_code == 0:
+            if proc.returncode == 0 and os.path.exists(pdf_path):
                 log_file = os.path.join(downloads_dir, "output.log")
                 if os.path.exists(log_file):
                     try:
                         os.remove(log_file)
                     except OSError:
                         pass
-                messagebox.showinfo(
-                    "Success",
-                    f"Resume compiled successfully to your Downloads folder!\n\n"
-                    f"PDF: {pdf_path}\n"
-                    f"(master.yaml also updated)"
-                )
-            else:
-                messagebox.showerror(
-                    "Compilation Error",
-                    f"LaTeX compilation failed.\n"
-                    f"Source saved to: {tex_path}\n"
-                    f"Check {os.path.join(downloads_dir, 'output.log')} for details."
-                )
-        else:
-            messagebox.showwarning(
-                "LaTeX Output Saved",
-                f"output.tex was created successfully and saved to your Downloads folder:\n{tex_path}\n\n"
-                "Note: 'pdflatex' was not found on your system.\n"
-                "To generate PDFs directly, install BasicTeX with:\n"
-                "brew install --cask basictex"
-            )
+                return (True, pdf_path, None)
+
+            log_file = os.path.join(downloads_dir, "output.log")
+            log_tail = ""
+            if os.path.exists(log_file):
+                try:
+                    with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+                        lines = f.readlines()
+                        log_tail = "".join(lines[-40:])
+                except Exception:
+                    pass
+            return (False, pdf_path, log_tail or proc.stderr.strip() or proc.stdout.strip() or "pdflatex compilation failed.")
+
     except Exception as e:
-        messagebox.showerror("Error", f"Failed to generate resume:\n{e}")
+        return (False, pdf_path, str(e))
+
+def show_compiler_install_dialog():
+    """Dialog guiding user on how to install a LaTeX compiler."""
+    dialog = tk.Toplevel(root)
+    dialog.title("LaTeX Compiler Needed")
+    dialog.configure(bg=BG_SECTION)
+    dialog.geometry("520x240")
+    dialog.resizable(False, False)
+    dialog.transient(root)
+    dialog.grab_set()
+
+    root.update_idletasks()
+    x = root.winfo_x() + (root.winfo_width() // 2) - 260
+    y = root.winfo_y() + (root.winfo_height() // 2) - 120
+    dialog.geometry(f"+{max(0, x)}+{max(0, y)}")
+
+    tk.Label(
+        dialog,
+        text="LaTeX Compiler Not Found",
+        font=F_BODY_B,
+        bg=BG_SECTION,
+        fg=FG
+    ).pack(anchor="w", padx=24, pady=(20, 6))
+
+    msg = (
+        "To compile and preview your resume directly, install Tectonic (modern, fast XeTeX engine):\n\n"
+        "        brew install tectonic\n\n"
+        "or install BasicTeX with:\n"
+        "        brew install --cask basictex\n\n"
+        "Your resume source was saved to ~/Downloads/output.tex."
+    )
+    tk.Label(
+        dialog,
+        text=msg,
+        font=F_BODY,
+        bg=BG_SECTION,
+        fg=FG_MUTED,
+        justify="left"
+    ).pack(anchor="w", padx=24, pady=4)
+
+    btn_frame = tk.Frame(dialog, bg=BG_SECTION)
+    btn_frame.pack(fill="x", padx=24, pady=(16, 0))
+
+    PillButton(
+        btn_frame, "Close", dialog.destroy, parent_bg=BG_SECTION,
+        bg=BG_ITEM, fg=FG, border=BORDER_ITEM, font=F_BTN_B, padx=16, pady=6
+    ).pack(side="right")
+
+def recompile_for_preview():
+    save_master_yaml(show_popup=False)
+    success, pdf_path, err = compile_resume_pdf()
+    return (success, err)
+
+def on_preview_click():
+    global preview_window
+    if not save_master_yaml(show_popup=False):
+        return
+
+    success, pdf_path, err_msg = compile_resume_pdf()
+    tex_path = os.path.expanduser("~/Downloads/output.tex")
+
+    if not success:
+        if err_msg == "NO_COMPILER":
+            show_compiler_install_dialog()
+        else:
+            messagebox.showerror("LaTeX Compilation Error", err_msg)
+        return
+
+    if preview_window and preview_window.winfo_exists():
+        preview_window.load_pdf(pdf_path)
+        preview_window.deiconify()
+        preview_window.lift()
+    else:
+        preview_window = PDFPreviewWindow(
+            root, pdf_path, tex_path,
+            recompile_callback=recompile_for_preview
+        )
+
+def generate_pdf():
+    if not save_master_yaml(show_popup=False):
+        return
+
+    success, pdf_path, err_msg = compile_resume_pdf()
+    tex_path = os.path.expanduser("~/Downloads/output.tex")
+
+    if success:
+        messagebox.showinfo(
+            "Success",
+            f"Resume compiled successfully to your Downloads folder!\n\n"
+            f"PDF: {pdf_path}\n"
+            f"(master.yaml also updated)"
+        )
+    elif err_msg == "NO_COMPILER":
+        show_compiler_install_dialog()
+    else:
+        messagebox.showerror(
+            "Compilation Error",
+            f"LaTeX compilation failed.\n\n"
+            f"Source saved to: {tex_path}\n\n"
+            f"Error details:\n{err_msg}"
+        )
 
 # Function to add new custom section (custom modal dialog compatible with Tk 9 on macOS)
 def prompt_new_section():
@@ -1144,7 +1267,12 @@ PillButton(
 PillButton(
     action_frame, "Generate Resume PDF", generate_pdf, parent_bg=BG_BAR,
     bg=FG, fg=BG_APP, hover_bg="#ffffff", font=F_BTN_B, padx=16, pady=7, radius=10,
-).pack(side="right", padx=(10, 20))
+).pack(side="right", padx=(8, 20))
+
+PillButton(
+    action_frame, "Preview", on_preview_click, parent_bg=BG_BAR,
+    bg=BG_ITEM, fg=FG, border=BORDER_ITEM, font=F_BTN_B, padx=14, pady=7, radius=10,
+).pack(side="right", padx=(0, 6))
 
 if __name__ == "__main__":
     root.mainloop()
