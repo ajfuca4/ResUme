@@ -136,7 +136,7 @@ master_data = load_data()
 root = tk.Tk()
 root.title("Local Resume Builder - Dynamic Section Editor")
 root.geometry("900x900")
-root.minsize(500, 0)
+root.minsize(800, 0)
 root.configure(bg=BG_APP)
 
 # Dark, arrow-less scrollbar ('clam' theme allows full colour control on macOS)
@@ -161,7 +161,7 @@ header_frame.pack(fill="x")
 
 tk.Label(
     header_frame,
-    text="Local Resume Builder",
+    text="ResUme",
     font=F_TITLE,
     bg=BG_APP,
     fg=FG
@@ -329,8 +329,8 @@ def extract_sections_from_ui():
         })
     return sections_list
 
-# Save to master.yaml
-def save_master_yaml(show_popup=True):
+# Autosave to master.yaml
+def save_master_yaml(show_popup=False):
     master_data["sections"] = extract_sections_from_ui()
     if header_widgets:
         master_data["name"] = header_widgets["name_entry"].get().strip()
@@ -339,11 +339,9 @@ def save_master_yaml(show_popup=True):
     try:
         with open("master.yaml", "w", encoding="utf-8") as f:
             yaml.dump(master_data, f, sort_keys=False, allow_unicode=True)
-        if show_popup:
-            messagebox.showinfo("Saved", "All sections, subheaders, and bullets saved to master.yaml!")
         return True
     except Exception as e:
-        messagebox.showerror("Save Error", f"Failed to save master.yaml:\n{e}")
+        print(f"Failed to autosave master.yaml: {e}")
         return False
 
 _is_ui_initialized = False
@@ -1141,17 +1139,12 @@ def prompt_new_section():
 PillButton(
     action_frame, "+  New Section", prompt_new_section, parent_bg=BG_BAR,
     bg=BG_ITEM, fg=FG, border=BORDER_ITEM, font=F_BTN_B, padx=14, pady=7, radius=10,
-).pack(side="left", padx=(20, 8))
-
-PillButton(
-    action_frame, "Save to master.yaml", lambda: save_master_yaml(show_popup=True), parent_bg=BG_BAR,
-    bg=BG_ITEM, fg=FG, border=BORDER_ITEM, font=F_BTN_B, padx=14, pady=7, radius=10,
-).pack(side="left")
+).pack(side="left", padx=(20, 10))
 
 PillButton(
     action_frame, "Generate Resume PDF", generate_pdf, parent_bg=BG_BAR,
     bg=FG, fg=BG_APP, hover_bg="#ffffff", font=F_BTN_B, padx=16, pady=7, radius=10,
-).pack(side="right", padx=(8, 20))
+).pack(side="right", padx=(10, 20))
 
 if __name__ == "__main__":
     root.mainloop()
