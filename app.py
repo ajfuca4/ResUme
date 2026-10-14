@@ -1,10 +1,11 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, ttk
 import yaml
 import os
 import sys
 import shutil
 from jinja2 import Environment, FileSystemLoader
+from ui_widgets import *  # dark theme palette, fonts, RoundedCard, PillButton, Toggle, inputs
 
 # 1. Load or initialize master YAML file
 def load_data():
@@ -115,39 +116,58 @@ master_data = load_data()
 # 2. Setup native desktop window
 root = tk.Tk()
 root.title("Local Resume Builder - Dynamic Section Editor")
-root.geometry("860x880")
+root.geometry("900x900")
+root.minsize(500, 0)
+root.configure(bg=BG_APP)
+
+# Dark, arrow-less scrollbar ('clam' theme allows full colour control on macOS)
+_style = ttk.Style(root)
+_style.theme_use("clam")
+_style.layout("Dark.Vertical.TScrollbar", [
+    ("Vertical.Scrollbar.trough", {
+        "sticky": "ns",
+        "children": [("Vertical.Scrollbar.thumb", {"expand": "1", "sticky": "nswe"})],
+    })
+])
+_style.configure(
+    "Dark.Vertical.TScrollbar",
+    background=BG_ITEM, troughcolor=BG_APP, bordercolor=BG_APP,
+    lightcolor=BG_ITEM, darkcolor=BG_ITEM, gripcount=0, relief="flat", width=10,
+)
+_style.map("Dark.Vertical.TScrollbar", background=[("active", BORDER_INPUT), ("pressed", BORDER_INPUT)])
 
 # Header Section
-header_frame = tk.Frame(root, pady=8, bg="#f8fafc")
+header_frame = tk.Frame(root, bg=BG_APP, padx=28, pady=18)
 header_frame.pack(fill="x")
 
 tk.Label(
     header_frame,
     text="Local Resume Builder",
-    font=("Arial", 16, "bold"),
-    bg="#f8fafc",
-    fg="#0f172a"
-).pack()
+    font=F_TITLE,
+    bg=BG_APP,
+    fg=FG
+).pack(anchor="w")
 
 tk.Label(
     header_frame,
     text="Build, toggle, and edit custom sections, subheaders, and bullets.",
-    font=("Arial", 10),
-    bg="#f8fafc",
-    fg="#64748b"
-).pack(pady=(2, 8))
+    font=F_SUBTITLE,
+    bg=BG_APP,
+    fg=FG_MUTED
+).pack(anchor="w", pady=(2, 0))
 
 # Bottom Action Toolbar (docked cleanly to bottom before expandable center)
-action_frame = tk.Frame(root, pady=10, bg="#f1f5f9")
+action_frame = tk.Frame(root, pady=12, bg=BG_BAR)
 action_frame.pack(side="bottom", fill="x")
+tk.Frame(root, bg=BORDER_BAR, height=1).pack(side="bottom", fill="x")
 
 # Scrollable canvas for dynamic resume components (occupies all remaining space)
-canvas_container = tk.Frame(root)
-canvas_container.pack(side="top", fill="both", expand=True, padx=12, pady=4)
+canvas_container = tk.Frame(root, bg=BG_APP)
+canvas_container.pack(side="top", fill="both", expand=True, padx=(12, 4), pady=(0, 6))
 
-canvas = tk.Canvas(canvas_container, borderwidth=0, highlightthickness=0, yscrollincrement=1)
-scrollbar = tk.Scrollbar(canvas_container, orient="vertical", command=canvas.yview)
-scrollable_frame = tk.Frame(canvas)
+canvas = tk.Canvas(canvas_container, borderwidth=0, highlightthickness=0, yscrollincrement=1, bg=BG_APP)
+scrollbar = ttk.Scrollbar(canvas_container, orient="vertical", command=canvas.yview, style="Dark.Vertical.TScrollbar")
+scrollable_frame = tk.Frame(canvas, bg=BG_APP)
 
 def _on_frame_configure(e):
     canvas.configure(scrollregion=canvas.bbox("all"))
@@ -163,7 +183,7 @@ canvas.bind("<Configure>", on_canvas_configure)
 canvas.configure(yscrollcommand=scrollbar.set)
 
 canvas.pack(side="left", fill="both", expand=True)
-scrollbar.pack(side="right", fill="y")
+scrollbar.pack(side="right", fill="y", pady=4)
 
 # 1. macOS Trackpad Two-Finger Scrolling (<TouchpadScroll>) in Tk 9 Aqua
 def _on_touchpad(event):
@@ -429,6 +449,18 @@ def move_section_down(sec_data):
         update_scroll()
 
 # Bullet management
+def _autosave():
+    if _is_ui_initialized:
+        save_master_yaml(show_popup=False)
+
+def _icon_controls(parent, bg, on_up, on_down, on_delete):
+    """Compact ▲ ▼ ✕ ghost-button group."""
+    box = tk.Frame(parent, bg=bg)
+    for text, cmd, fg in (("▲", on_up, FG_MUTED), ("▼", on_down, FG_MUTED), ("✕", on_delete, DANGER)):
+        PillButton(box, text, cmd, parent_bg=bg, fg=fg, font=F_ICON,
+                   padx=7, pady=3, radius=6).pack(side="left", padx=1)
+    return box
+
 def remove_bullet(item_data, bullet_data):
     bullet_data["frame"].destroy()
     item_data["bullets"].remove(bullet_data)
@@ -437,58 +469,24 @@ def remove_bullet(item_data, bullet_data):
     update_scroll()
 
 def add_bullet_widget(item_data, parent_container, enabled=True, text=""):
-    row = tk.Frame(parent_container)
-    row.pack(fill="x", expand=True, pady=2, padx=(12, 0))
+    row = tk.Frame(parent_container, bg=BG_ITEM)
+    row.pack(fill="x", pady=3)
 
     var = tk.BooleanVar(value=enabled)
-    cb = tk.Checkbutton(
-        row,
-        variable=var,
-        command=lambda: save_master_yaml(show_popup=False) if _is_ui_initialized else None
-    )
-    cb.pack(side="left", anchor="n")
+    Toggle(row, var, BG_ITEM, command=_autosave).pack(side="left", anchor="n", padx=(0, 10), pady=8)
 
-    txt = tk.Text(row, height=2, wrap="word", font=("Arial", 10), relief="solid", bd=1)
+    _icon_controls(
+        row, BG_ITEM,
+        lambda: move_bullet_up(item_data, bullet_data),
+        lambda: move_bullet_down(item_data, bullet_data),
+        lambda: remove_bullet(item_data, bullet_data),
+    ).pack(side="right", anchor="n", padx=(8, 0), pady=5)
+
+    txt = make_text(row)
     txt.insert("1.0", text)
-    txt.pack(side="left", fill="x", expand=True, padx=4)
+    txt.pack(side="left", fill="x", expand=True)
 
     bullet_data = {"var": var, "text_widget": txt, "frame": row}
-
-    btn_box = tk.Frame(row)
-    btn_box.pack(side="right", anchor="n")
-
-    tk.Button(
-        btn_box,
-        text="▲",
-        font=("Arial", 8),
-        bd=1,
-        relief="groove",
-        padx=2,
-        pady=0,
-        command=lambda: move_bullet_up(item_data, bullet_data)
-    ).pack(side="left", padx=1)
-
-    tk.Button(
-        btn_box,
-        text="▼",
-        font=("Arial", 8),
-        bd=1,
-        relief="groove",
-        padx=2,
-        pady=0,
-        command=lambda: move_bullet_down(item_data, bullet_data)
-    ).pack(side="left", padx=1)
-
-    tk.Button(
-        btn_box,
-        text="✕",
-        fg="#dc2626",
-        bd=0,
-        padx=3,
-        pady=0,
-        font=("Arial", 9),
-        command=lambda: remove_bullet(item_data, bullet_data)
-    ).pack(side="left", padx=(1, 0))
 
     item_data["bullets"].append(bullet_data)
     update_scroll()
@@ -505,100 +503,65 @@ def add_item_widget(sec_data, parent_container, item_dict=None):
     if item_dict is None:
         item_dict = {"enabled": True, "field1": "", "field2": "", "field3": "", "field4": "", "bullets": []}
 
-    card = tk.LabelFrame(parent_container, text=" Subheader Item ", padx=8, pady=6, fg="#334155")
-    card.pack(fill="x", expand=True, pady=4, padx=4)
+    card = RoundedCard(parent_container, bg=BG_ITEM, parent_bg=BG_SECTION,
+                       border=BORDER_ITEM, radius=12, padx=14, pady=12)
+    card.pack(fill="x", pady=5)
+    body = card.inner
 
     var = tk.BooleanVar(value=item_dict.get("enabled", True))
+    item_data = {"var": var, "frame": card, "bullets": []}
 
-    # Row 1: Field 1 (Subheader / Title) & Field 2 (Right-hand text / Dates)
-    r1 = tk.Frame(card)
-    r1.pack(fill="x", expand=True, pady=1)
+    fields = tk.Frame(body, bg=BG_ITEM)
+    fields.pack(fill="x")
+    fields.columnconfigure(2, weight=1)
 
-    tk.Checkbutton(
-        r1,
-        variable=var,
-        command=lambda: save_master_yaml(show_popup=False) if _is_ui_initialized else None
-    ).pack(side="left")
+    # Row 1: Field 1 (Title/Header) & Field 2 (Dates/Right)
+    Toggle(fields, var, BG_ITEM, command=_autosave).grid(row=0, column=0, padx=(0, 10), sticky="w")
 
-    tk.Label(r1, text="Field 1 (Title/Header):", font=("Arial", 9, "bold")).pack(side="left")
-    e1 = tk.Entry(r1, font=("Arial", 10, "bold"))
+    make_label(fields, "Title", BG_ITEM).grid(row=0, column=1, sticky="w", padx=(0, 8))
+    e1 = make_entry(fields, font=F_BODY_B)
     e1.insert(0, item_dict.get("field1", ""))
-    e1.pack(side="left", fill="x", expand=True, padx=4)
+    e1.grid(row=0, column=2, sticky="ew", pady=3)
 
-    tk.Label(r1, text="Field 2 (Dates/Right):", font=("Arial", 9)).pack(side="left")
-    e2 = tk.Entry(r1, width=22)
+    make_label(fields, "Dates", BG_ITEM).grid(row=0, column=3, sticky="w", padx=(14, 8))
+    e2 = make_entry(fields, width=20)
     e2.insert(0, item_dict.get("field2", ""))
-    e2.pack(side="left", padx=4)
+    e2.grid(row=0, column=4, sticky="ew", pady=3)
 
-    item_data = {"var": var, "e1": e1, "e2": e2, "frame": card, "bullets": []}
+    _icon_controls(
+        fields, BG_ITEM,
+        lambda: move_item_up(sec_data, item_data),
+        lambda: move_item_down(sec_data, item_data),
+        lambda: remove_item(sec_data, item_data),
+    ).grid(row=0, column=5, padx=(10, 0), sticky="e")
 
-    item_controls = tk.Frame(r1)
-    item_controls.pack(side="right")
-
-    tk.Button(
-        item_controls,
-        text="▲",
-        font=("Arial", 8),
-        bd=1,
-        relief="groove",
-        padx=3,
-        pady=0,
-        command=lambda: move_item_up(sec_data, item_data)
-    ).pack(side="left", padx=1)
-
-    tk.Button(
-        item_controls,
-        text="▼",
-        font=("Arial", 8),
-        bd=1,
-        relief="groove",
-        padx=3,
-        pady=0,
-        command=lambda: move_item_down(sec_data, item_data)
-    ).pack(side="left", padx=1)
-
-    tk.Button(
-        item_controls,
-        text="✕ Delete Item",
-        fg="#dc2626",
-        bd=0,
-        font=("Arial", 9),
-        command=lambda: remove_item(sec_data, item_data)
-    ).pack(side="left", padx=(2, 0))
-
-    # Row 2: Field 3 (Left-hand subtext / Company/Degree) & Field 4 (Right-hand subtext / Location)
-    r2 = tk.Frame(card)
-    r2.pack(fill="x", expand=True, pady=1)
-
-    tk.Label(r2, text="Field 3 (Subtext/Company):", font=("Arial", 9)).pack(side="left", padx=(24, 0))
-    e3 = tk.Entry(r2, font=("Arial", 10, "italic"))
+    # Row 2: Field 3 (Subtext/Company) & Field 4 (Location/Right)
+    make_label(fields, "Subtitle", BG_ITEM).grid(row=1, column=1, sticky="w", padx=(0, 8))
+    e3 = make_entry(fields, font=F_BODY_I)
     e3.insert(0, item_dict.get("field3", ""))
-    e3.pack(side="left", fill="x", expand=True, padx=4)
+    e3.grid(row=1, column=2, sticky="ew", pady=3)
 
-    tk.Label(r2, text="Field 4 (Location/Right):", font=("Arial", 9)).pack(side="left")
-    e4 = tk.Entry(r2, width=22)
+    make_label(fields, "Location", BG_ITEM).grid(row=1, column=3, sticky="w", padx=(14, 8))
+    e4 = make_entry(fields, width=20)
     e4.insert(0, item_dict.get("field4", ""))
-    e4.pack(side="left", padx=4)
+    e4.grid(row=1, column=4, sticky="ew", pady=3)
 
-    item_data["e3"] = e3
-    item_data["e4"] = e4
+    item_data.update({"e1": e1, "e2": e2, "e3": e3, "e4": e4})
 
     # Bullets container
-    bullets_container = tk.Frame(card)
-    bullets_container.pack(fill="x", expand=True, pady=(4, 2))
+    bullets_container = tk.Frame(body, bg=BG_ITEM)
+    bullets_container.pack(fill="x", padx=(28, 0), pady=(8, 0))
 
     for b in item_dict.get("bullets", []):
         b_en = b.get("enabled", True) if isinstance(b, dict) else True
         b_txt = b.get("text", "") if isinstance(b, dict) else str(b)
         add_bullet_widget(item_data, bullets_container, b_en, b_txt)
 
-    add_b_btn = tk.Button(
-        card,
-        text="+ Add Bullet",
-        font=("Arial", 9),
-        command=lambda: add_bullet_widget(item_data, bullets_container, True, "")
-    )
-    add_b_btn.pack(anchor="w", padx=24, pady=(2, 4))
+    PillButton(
+        body, "+ Add Bullet",
+        lambda: add_bullet_widget(item_data, bullets_container, True, ""),
+        parent_bg=BG_ITEM, fg=FG_MUTED, font=F_BTN, padx=10, pady=4,
+    ).pack(anchor="w", padx=(22, 0), pady=(6, 0))
 
     sec_data["entries"].append(item_data)
     update_scroll()
@@ -615,61 +578,31 @@ def add_line_widget(sec_data, parent_container, line_dict=None):
     if line_dict is None:
         line_dict = {"enabled": True, "label": "", "text": ""}
 
-    row = tk.Frame(parent_container, pady=2)
-    row.pack(fill="x", expand=True, padx=4)
+    card = RoundedCard(parent_container, bg=BG_ITEM, parent_bg=BG_SECTION,
+                       border=BORDER_ITEM, radius=12, padx=12, pady=9)
+    card.pack(fill="x", pady=4)
+    row = card.inner
 
     var = tk.BooleanVar(value=line_dict.get("enabled", True))
-    tk.Checkbutton(
-        row,
-        variable=var,
-        command=lambda: save_master_yaml(show_popup=False) if _is_ui_initialized else None
-    ).pack(side="left")
+    Toggle(row, var, BG_ITEM, command=_autosave).pack(side="left", padx=(0, 10))
 
-    tk.Label(row, text="Title/Label:", font=("Arial", 9, "bold")).pack(side="left")
-    el = tk.Entry(row, width=18, font=("Arial", 10, "bold"))
+    el = make_entry(row, width=16, font=F_BODY_B)
     el.insert(0, line_dict.get("label", ""))
-    el.pack(side="left", padx=4)
+    el.pack(side="left", padx=(0, 8))
 
-    tk.Label(row, text="Content List:", font=("Arial", 9)).pack(side="left")
-    et = tk.Entry(row, font=("Arial", 10))
+    line_data = {"var": var, "label_entry": el, "frame": card}
+
+    _icon_controls(
+        row, BG_ITEM,
+        lambda: move_line_up(sec_data, line_data),
+        lambda: move_line_down(sec_data, line_data),
+        lambda: remove_line(sec_data, line_data),
+    ).pack(side="right", padx=(8, 0))
+
+    et = make_entry(row)
     et.insert(0, line_dict.get("text", ""))
-    et.pack(side="left", fill="x", expand=True, padx=4)
-
-    line_data = {"var": var, "label_entry": el, "text_entry": et, "frame": row}
-
-    line_controls = tk.Frame(row)
-    line_controls.pack(side="right")
-
-    tk.Button(
-        line_controls,
-        text="▲",
-        font=("Arial", 8),
-        bd=1,
-        relief="groove",
-        padx=2,
-        pady=0,
-        command=lambda: move_line_up(sec_data, line_data)
-    ).pack(side="left", padx=1)
-
-    tk.Button(
-        line_controls,
-        text="▼",
-        font=("Arial", 8),
-        bd=1,
-        relief="groove",
-        padx=2,
-        pady=0,
-        command=lambda: move_line_down(sec_data, line_data)
-    ).pack(side="left", padx=1)
-
-    tk.Button(
-        line_controls,
-        text="✕",
-        fg="#dc2626",
-        bd=0,
-        font=("Arial", 9),
-        command=lambda: remove_line(sec_data, line_data)
-    ).pack(side="left", padx=(1, 0))
+    et.pack(side="left", fill="x", expand=True)
+    line_data["text_entry"] = et
 
     sec_data["simple_lines"].append(line_data)
     update_scroll()
@@ -689,39 +622,29 @@ def add_section_widget(sec_dict=None):
 
     is_included = sec_dict.get("enabled", True)
 
-    card = tk.LabelFrame(
-        scrollable_frame,
-        text="",
-        padx=12,
-        pady=10 if is_included else 4,
-        bd=2,
-        relief="groove",
-        bg="#ffffff"
-    )
-    card.pack(fill="x", expand=True, pady=8, padx=10)
+    card = RoundedCard(scrollable_frame, bg=BG_SECTION, parent_bg=BG_APP,
+                       border=BORDER_SECTION, radius=16, padx=16,
+                       pady=14 if is_included else 10)
+    card.pack(fill="x", pady=7, padx=(14, 8))
+    inner = card.inner
 
     # Top Bar of Section
-    top = tk.Frame(card, bg="#ffffff")
-    top.pack(fill="x", expand=True, pady=(0, 6 if is_included else 0))
+    top = tk.Frame(inner, bg=BG_SECTION)
+    top.pack(fill="x", pady=(0, 10 if is_included else 0))
 
     var = tk.BooleanVar(value=is_included)
+    Toggle(top, var, BG_SECTION, command=lambda: update_collapse_ui()).pack(side="left", padx=(0, 8))
 
-    cb = tk.Checkbutton(top, variable=var, bg="#ffffff")
-    cb.pack(side="left")
-
-    tk.Label(top, text="Section Name:", font=("Arial", 10, "bold"), bg="#ffffff").pack(side="left")
-    title_entry = tk.Entry(top, font=("Arial", 12, "bold"), width=24)
+    # Title looks like a heading; a subtle ring appears on hover / focus
+    title_entry = make_entry(top, font=F_SECTION, width=24, bg=BG_SECTION, ring=BG_SECTION,
+                             fg=FG if is_included else FG_DIM)
     title_entry.insert(0, sec_dict.get("title", "New Section"))
-    title_entry.pack(side="left", padx=6)
+    title_entry.pack(side="left")
+    title_entry.bind("<Enter>", lambda e: title_entry.configure(highlightbackground=BORDER_INPUT))
+    title_entry.bind("<Leave>", lambda e: title_entry.configure(highlightbackground=BG_SECTION))
 
-    status_lbl = tk.Label(
-        top,
-        text="" if is_included else "(Excluded)",
-        font=("Arial", 9, "italic"),
-        bg="#ffffff",
-        fg="#64748b"
-    )
-    status_lbl.pack(side="left", padx=4)
+    status_lbl = tk.Label(top, text="" if is_included else "EXCLUDED", font=F_TAG, bg=BG_SECTION, fg=FG_DIM)
+    status_lbl.pack(side="left", padx=8)
 
     sec_data = {
         "var": var,
@@ -731,58 +654,27 @@ def add_section_widget(sec_dict=None):
         "simple_lines": []
     }
 
-    sec_controls = tk.Frame(top, bg="#ffffff")
+    sec_controls = tk.Frame(top, bg=BG_SECTION)
     sec_controls.pack(side="right")
-
-    tk.Button(
-        sec_controls,
-        text="▲ Move Up",
-        font=("Arial", 9),
-        bd=1,
-        relief="groove",
-        bg="#f1f5f9",
-        fg="#334155",
-        padx=4,
-        pady=1,
-        command=lambda: move_section_up(sec_data)
-    ).pack(side="left", padx=2)
-
-    tk.Button(
-        sec_controls,
-        text="▼ Move Down",
-        font=("Arial", 9),
-        bd=1,
-        relief="groove",
-        bg="#f1f5f9",
-        fg="#334155",
-        padx=4,
-        pady=1,
-        command=lambda: move_section_down(sec_data)
-    ).pack(side="left", padx=2)
-
-    tk.Button(
-        sec_controls,
-        text="✕ Delete Section",
-        fg="#dc2626",
-        bd=0,
-        font=("Arial", 9),
-        bg="#ffffff",
-        padx=4,
-        command=lambda: remove_section(sec_data)
-    ).pack(side="left", padx=(4, 0))
+    PillButton(sec_controls, "▲", lambda: move_section_up(sec_data), parent_bg=BG_SECTION,
+               fg=FG_MUTED, font=F_ICON, padx=8, pady=4).pack(side="left", padx=1)
+    PillButton(sec_controls, "▼", lambda: move_section_down(sec_data), parent_bg=BG_SECTION,
+               fg=FG_MUTED, font=F_ICON, padx=8, pady=4).pack(side="left", padx=1)
+    PillButton(sec_controls, "Delete", lambda: remove_section(sec_data), parent_bg=BG_SECTION,
+               fg=DANGER, font=F_BTN, padx=10, pady=4).pack(side="left", padx=(4, 0))
 
     # Content body container (collapsible)
-    body_frame = tk.Frame(card, bg="#ffffff")
+    body_frame = tk.Frame(inner, bg=BG_SECTION)
     if is_included:
-        body_frame.pack(fill="x", expand=True)
+        body_frame.pack(fill="x")
 
     # Subheaders container
-    entries_container = tk.Frame(body_frame, bg="#ffffff")
-    entries_container.pack(fill="x", expand=True)
+    entries_container = tk.Frame(body_frame, bg=BG_SECTION)
+    entries_container.pack(fill="x")
 
     # Simple lines container
-    lines_container = tk.Frame(body_frame, bg="#ffffff")
-    lines_container.pack(fill="x", expand=True)
+    lines_container = tk.Frame(body_frame, bg=BG_SECTION)
+    lines_container.pack(fill="x")
 
     for item in sec_dict.get("entries", []):
         add_item_widget(sec_data, entries_container, item)
@@ -791,38 +683,36 @@ def add_section_widget(sec_dict=None):
         add_line_widget(sec_data, lines_container, line)
 
     # Action bar for this section
-    sec_actions = tk.Frame(body_frame, pady=6, bg="#ffffff")
-    sec_actions.pack(fill="x")
+    sec_actions = tk.Frame(body_frame, bg=BG_SECTION)
+    sec_actions.pack(fill="x", pady=(8, 0))
 
-    tk.Button(
-        sec_actions,
-        text="+ Add Subheader Item (with bullets)",
-        font=("Arial", 9),
-        command=lambda: add_item_widget(sec_data, entries_container)
+    PillButton(
+        sec_actions, "+ Subheader Item",
+        lambda: add_item_widget(sec_data, entries_container),
+        parent_bg=BG_SECTION, bg=BG_ITEM, fg=FG_MUTED, border=BORDER_ITEM, padx=12, pady=5,
     ).pack(side="left", padx=(0, 8))
 
-    tk.Button(
-        sec_actions,
-        text="+ Add Single Line (e.g. Skills / Cert)",
-        font=("Arial", 9),
-        command=lambda: add_line_widget(sec_data, lines_container)
+    PillButton(
+        sec_actions, "+ Single Line",
+        lambda: add_line_widget(sec_data, lines_container),
+        parent_bg=BG_SECTION, bg=BG_ITEM, fg=FG_MUTED, border=BORDER_ITEM, padx=12, pady=5,
     ).pack(side="left")
 
     def update_collapse_ui():
         if var.get():
-            body_frame.pack(fill="x", expand=True)
-            card.configure(pady=10)
-            top.pack_configure(pady=(0, 6))
+            body_frame.pack(fill="x")
+            card.set_padding(pady=14)
+            top.pack_configure(pady=(0, 10))
             status_lbl.configure(text="")
+            title_entry.configure(fg=FG)
         else:
             body_frame.pack_forget()
-            card.configure(pady=4)
+            card.set_padding(pady=10)
             top.pack_configure(pady=0)
-            status_lbl.configure(text="(Excluded)")
-            save_master_yaml(show_popup=False)
+            status_lbl.configure(text="EXCLUDED")
+            title_entry.configure(fg=FG_DIM)
+        _autosave()
         update_scroll()
-
-    cb.configure(command=update_collapse_ui)
 
     sections_widgets.append(sec_data)
     update_scroll()
@@ -995,25 +885,28 @@ def generate_pdf():
 def prompt_new_section():
     dialog = tk.Toplevel(root)
     dialog.title("Add New Section")
-    dialog.geometry("400x160")
+    dialog.configure(bg=BG_SECTION)
+    dialog.geometry("420x170")
     dialog.resizable(False, False)
     dialog.transient(root)
     dialog.grab_set()
 
     # Center relative to root window
     root.update_idletasks()
-    x = root.winfo_x() + (root.winfo_width() // 2) - 200
-    y = root.winfo_y() + (root.winfo_height() // 2) - 80
+    x = root.winfo_x() + (root.winfo_width() // 2) - 210
+    y = root.winfo_y() + (root.winfo_height() // 2) - 85
     dialog.geometry(f"+{max(0, x)}+{max(0, y)}")
 
     tk.Label(
         dialog,
-        text="Enter the title for the new section:",
-        font=("Arial", 11, "bold")
-    ).pack(pady=(20, 8))
+        text="Enter the title for the new section",
+        font=F_BODY_B,
+        bg=BG_SECTION,
+        fg=FG
+    ).pack(anchor="w", padx=24, pady=(22, 8))
 
-    entry = tk.Entry(dialog, font=("Arial", 11), width=30)
-    entry.pack(pady=4)
+    entry = make_entry(dialog, font=F_BODY)
+    entry.pack(fill="x", padx=24)
     entry.focus_set()
 
     def on_ok():
@@ -1027,62 +920,38 @@ def prompt_new_section():
     def on_cancel():
         dialog.destroy()
 
-    btn_frame = tk.Frame(dialog)
-    btn_frame.pack(pady=14)
+    btn_frame = tk.Frame(dialog, bg=BG_SECTION)
+    btn_frame.pack(fill="x", padx=24, pady=18)
 
-    ok_btn = tk.Button(
-        btn_frame,
-        text="Add Section",
-        font=("Arial", 10, "bold"),
-        bg="#10b981",
-        fg="#047857",
-        padx=12,
-        command=on_ok
-    )
-    ok_btn.pack(side="left", padx=6)
+    PillButton(
+        btn_frame, "Add Section", on_ok, parent_bg=BG_SECTION,
+        bg=FG, fg=BG_APP, hover_bg="#ffffff", font=F_BTN_B, padx=14, pady=6,
+    ).pack(side="right")
 
-    cancel_btn = tk.Button(
-        btn_frame,
-        text="Cancel",
-        font=("Arial", 10),
-        padx=8,
-        command=on_cancel
-    )
-    cancel_btn.pack(side="left", padx=6)
+    PillButton(
+        btn_frame, "Cancel", on_cancel, parent_bg=BG_SECTION,
+        bg=BG_ITEM, fg=FG_MUTED, border=BORDER_ITEM, font=F_BTN, padx=14, pady=6,
+    ).pack(side="right", padx=(0, 8))
 
     entry.bind("<Return>", lambda e: on_ok())
     entry.bind("<Escape>", lambda e: on_cancel())
 
 
 
-tk.Button(
-    action_frame,
-    text="+ Add New Section",
-    font=("Arial", 10, "bold"),
-    command=prompt_new_section,
-    padx=10,
-    pady=4
-).pack(side="left", padx=(20, 10))
+PillButton(
+    action_frame, "+  New Section", prompt_new_section, parent_bg=BG_BAR,
+    bg=BG_ITEM, fg=FG, border=BORDER_ITEM, font=F_BTN_B, padx=14, pady=7, radius=10,
+).pack(side="left", padx=(20, 8))
 
-tk.Button(
-    action_frame,
-    text="💾 Save to master.yaml",
-    font=("Arial", 10, "bold"),
-    command=lambda: save_master_yaml(show_popup=True),
-    padx=10,
-    pady=4
-).pack(side="left", padx=10)
+PillButton(
+    action_frame, "Save to master.yaml", lambda: save_master_yaml(show_popup=True), parent_bg=BG_BAR,
+    bg=BG_ITEM, fg=FG, border=BORDER_ITEM, font=F_BTN_B, padx=14, pady=7, radius=10,
+).pack(side="left")
 
-tk.Button(
-    action_frame,
-    text="📄 Generate Resume PDF",
-    font=("Arial", 10, "bold"),
-    bg="#2563eb",
-    fg="#1d4ed8",
-    padx=14,
-    pady=4,
-    command=generate_pdf
-).pack(side="right", padx=(10, 20))
+PillButton(
+    action_frame, "Generate Resume PDF", generate_pdf, parent_bg=BG_BAR,
+    bg=FG, fg=BG_APP, hover_bg="#ffffff", font=F_BTN_B, padx=16, pady=7, radius=10,
+).pack(side="right", padx=(8, 20))
 
 if __name__ == "__main__":
     root.mainloop()
