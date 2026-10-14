@@ -110,10 +110,12 @@
 % \end{tabular*}
 
 \begin{center}
-    \textbf{\Huge \scshape \VAR{name}} \\ \vspace{1pt}
-    \small 123-456-7890 $|$ \href{mailto:x@x.com}{\underline{jake@su.edu}} $|$ 
-    \href{https://linkedin.com/in/...}{\underline{linkedin.com/in/jake}} $|$
-    \href{https://github.com/...}{\underline{github.com/jake}}
+    \textbf{\Huge \scshape \VAR{name}}
+\BLOCK{ if links }
+    \\ \vspace{1pt}
+    \small \BLOCK{ for link in links }\BLOCK{ if link.url }\href{\VAR{link.url}}{\underline{\VAR{link.label}}}\BLOCK{ else }\VAR{link.label}\BLOCK{ endif }\BLOCK{ if not loop.last } $|$ \BLOCK{ endif }\BLOCK{ endfor }
+
+\BLOCK{ endif }
 \end{center}
 
 \BLOCK{ for sec in sections }

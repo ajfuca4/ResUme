@@ -109,7 +109,26 @@ def load_data():
         ]
         data["sections"] = default_sections
 
-    return data
+    # Header links (identifier shown on the resume + the URL it points to).
+    # Migrate the legacy `contact` block on first run.
+    if "links" not in data:
+        contact = data.pop("contact", {}) or {}
+        links = []
+        if contact.get("phone"):
+            links.append({"enabled": True, "label": contact["phone"], "type": "phone"})
+        if contact.get("email"):
+            links.append({"enabled": True, "label": contact["email"], "url": f"mailto:{contact['email']}"})
+        data["links"] = links
+    else:
+        for item in data.get("links", []):
+            if item.get("type") == "phone" or (item.get("url") == "" and any(c.isdigit() for c in str(item.get("label", "")))):
+                item["type"] = "phone"
+                item.pop("url", None)
+
+    # Keep the header fields at the top of master.yaml
+    ordered = {"name": data.pop("name", ""), "links": data.pop("links", [])}
+    ordered.update(data)
+    return ordered
 
 master_data = load_data()
 
@@ -313,6 +332,9 @@ def extract_sections_from_ui():
 # Save to master.yaml
 def save_master_yaml(show_popup=True):
     master_data["sections"] = extract_sections_from_ui()
+    if header_widgets:
+        master_data["name"] = header_widgets["name_entry"].get().strip()
+        master_data["links"] = extract_links_from_ui()
 
     try:
         with open("master.yaml", "w", encoding="utf-8") as f:
@@ -717,7 +739,164 @@ def add_section_widget(sec_dict=None):
     sections_widgets.append(sec_data)
     update_scroll()
 
-# Build initial sections in UI
+# ---------------------------------------------------------------------------
+# Header (name + contact links)
+# ---------------------------------------------------------------------------
+header_widgets = {}
+
+def extract_links_from_ui():
+    links = []
+    for l in header_widgets.get("links", []):
+        label = l["label_entry"].get().strip()
+        item_type = l.get("type", "link")
+        if item_type == "phone":
+            if label:
+                links.append({"enabled": l["var"].get(), "label": label, "type": "phone"})
+        else:
+            url = l["url_entry"].get().strip() if "url_entry" in l else ""
+            if label or url:
+                links.append({"enabled": l["var"].get(), "label": label, "url": url})
+    return links
+
+def move_link(link_data, step):
+    links = header_widgets["links"]
+    idx = links.index(link_data)
+    new_idx = idx + step
+    if 0 <= new_idx < len(links):
+        other = links[new_idx]
+        links[idx], links[new_idx] = links[new_idx], links[idx]
+        if step < 0:
+            link_data["frame"].pack(before=other["frame"])
+        else:
+            link_data["frame"].pack(after=other["frame"])
+        _autosave()
+        update_scroll()
+
+def remove_link(link_data):
+    link_data["frame"].destroy()
+    header_widgets["links"].remove(link_data)
+    _autosave()
+    update_scroll()
+
+def add_phone_widget(parent_container, phone_dict=None):
+    if phone_dict is None:
+        phone_dict = {"enabled": True, "label": "", "type": "phone"}
+
+    card = RoundedCard(parent_container, bg=BG_ITEM, parent_bg=BG_SECTION,
+                       border=BORDER_ITEM, radius=12, padx=12, pady=9)
+    card.pack(fill="x", pady=4)
+    row = card.inner
+
+    var = tk.BooleanVar(value=phone_dict.get("enabled", True))
+    Toggle(row, var, BG_ITEM, command=_autosave).pack(side="left", padx=(0, 10))
+
+    make_label(row, "Phone", BG_ITEM).pack(side="left", padx=(0, 8))
+
+    link_data = {"var": var, "frame": card, "type": "phone"}
+
+    _icon_controls(
+        row, BG_ITEM,
+        lambda: move_link(link_data, -1),
+        lambda: move_link(link_data, 1),
+        lambda: remove_link(link_data),
+    ).pack(side="right", padx=(8, 0))
+
+    el = make_entry(row, font=F_BODY_B)
+    el.insert(0, phone_dict.get("label", ""))
+    el.pack(side="left", fill="x", expand=True)
+    link_data["label_entry"] = el
+
+    header_widgets["links"].append(link_data)
+    update_scroll()
+
+def add_link_widget(parent_container, link_dict=None):
+    if link_dict is None:
+        link_dict = {"enabled": True, "label": "", "url": "", "type": "link"}
+
+    card = RoundedCard(parent_container, bg=BG_ITEM, parent_bg=BG_SECTION,
+                       border=BORDER_ITEM, radius=12, padx=12, pady=9)
+    card.pack(fill="x", pady=4)
+    row = card.inner
+
+    var = tk.BooleanVar(value=link_dict.get("enabled", True))
+    Toggle(row, var, BG_ITEM, command=_autosave).pack(side="left", padx=(0, 10))
+
+    make_label(row, "Identifier", BG_ITEM).pack(side="left", padx=(0, 6))
+    el = make_entry(row, width=20, font=F_BODY_B)
+    el.insert(0, link_dict.get("label", ""))
+    el.pack(side="left", padx=(0, 12))
+
+    link_data = {"var": var, "label_entry": el, "frame": card, "type": "link"}
+
+    _icon_controls(
+        row, BG_ITEM,
+        lambda: move_link(link_data, -1),
+        lambda: move_link(link_data, 1),
+        lambda: remove_link(link_data),
+    ).pack(side="right", padx=(8, 0))
+
+    make_label(row, "Link", BG_ITEM).pack(side="left", padx=(0, 6))
+    eu = make_entry(row)
+    eu.insert(0, link_dict.get("url", ""))
+    eu.pack(side="left", fill="x", expand=True)
+    link_data["url_entry"] = eu
+
+    header_widgets["links"].append(link_data)
+    update_scroll()
+
+def build_header_widget():
+    card = RoundedCard(scrollable_frame, bg=BG_SECTION, parent_bg=BG_APP,
+                       border=BORDER_SECTION, radius=16, padx=16, pady=14)
+    card.pack(fill="x", pady=7, padx=(14, 8))
+    inner = card.inner
+
+    top = tk.Frame(inner, bg=BG_SECTION)
+    top.pack(fill="x", pady=(0, 10))
+    tk.Label(top, text="Header", font=F_SECTION, bg=BG_SECTION, fg=FG).pack(side="left")
+    tk.Label(top, text="Name and contact links shown at the top of the resume",
+             font=F_LABEL, bg=BG_SECTION, fg=FG_DIM).pack(side="left", padx=10, pady=(4, 0))
+
+    # Name
+    name_card = RoundedCard(inner, bg=BG_ITEM, parent_bg=BG_SECTION,
+                            border=BORDER_ITEM, radius=12, padx=14, pady=10)
+    name_card.pack(fill="x", pady=(0, 6))
+    make_label(name_card.inner, "Full Name", BG_ITEM).pack(side="left", padx=(0, 10))
+    name_entry = make_entry(name_card.inner, font=(UI_FONT, 15, "bold"))
+    name_entry.insert(0, master_data.get("name", "") or "")
+    name_entry.pack(side="left", fill="x", expand=True)
+
+    header_widgets["name_entry"] = name_entry
+    header_widgets["links"] = []
+
+    # Links
+    make_label(inner, "LINKS & CONTACT  ·  phone numbers, emails, portfolios, github, etc.",
+               BG_SECTION, fg=FG_DIM, font=F_TAG).pack(anchor="w", pady=(8, 2))
+    links_container = tk.Frame(inner, bg=BG_SECTION)
+    links_container.pack(fill="x")
+
+    for link in master_data.get("links", []) or []:
+        if link.get("type") == "phone" or (link.get("url") == "" and any(c.isdigit() for c in str(link.get("label", "")))):
+            add_phone_widget(links_container, link)
+        else:
+            add_link_widget(links_container, link)
+
+    btn_row = tk.Frame(inner, bg=BG_SECTION)
+    btn_row.pack(fill="x", pady=(8, 0))
+
+    PillButton(
+        btn_row, "+ Add Phone Number",
+        lambda: add_phone_widget(links_container),
+        parent_bg=BG_SECTION, bg=BG_ITEM, fg=FG_MUTED, border=BORDER_ITEM, padx=12, pady=5,
+    ).pack(side="left", padx=(0, 8))
+
+    PillButton(
+        btn_row, "+ Add Link",
+        lambda: add_link_widget(links_container),
+        parent_bg=BG_SECTION, bg=BG_ITEM, fg=FG_MUTED, border=BORDER_ITEM, padx=12, pady=5,
+    ).pack(side="left")
+
+# Build header + initial sections in UI
+build_header_widget()
 for sec in master_data.get("sections", []):
     add_section_widget(sec)
 update_scroll()
@@ -761,6 +940,15 @@ def escape_tree(obj):
         return {k: escape_tree(v) for k, v in obj.items()}
     return obj
 
+# Make bare links clickable: emails -> mailto:, domains -> https://
+def normalize_url(url):
+    url = (url or "").strip()
+    if not url or "://" in url or url.startswith(("mailto:", "tel:")):
+        return url
+    if "@" in url:
+        return f"mailto:{url}"
+    return f"https://{url}"
+
 # Generate PDF Compilation Logic
 def generate_pdf():
     # 1. Sync and save latest edits
@@ -796,9 +984,21 @@ def generate_pdf():
 
     final_data = master_data.copy()
     final_data["sections"] = compiled_sections
+    final_data.pop("links", None)
 
     # Escape all LaTeX special characters (e.g., % -> \%, & -> \&, $ -> \$, _ -> \_, # -> \#)
     final_data = escape_tree(final_data)
+
+    # Header links: identifier is escaped as normal text; URL only needs % and #
+    # escaped (hyperref's \href handles _ & ~ etc. itself)
+    final_data["links"] = [
+        {
+            "label": escape_latex(l.get("label", "") or l.get("url", "")),
+            "url": normalize_url(l.get("url", "")).replace("%", r"\%").replace("#", r"\#") if l.get("url") else "",
+        }
+        for l in master_data.get("links", []) or []
+        if l.get("enabled", True) and (l.get("label") or l.get("url"))
+    ]
 
     # 3. Configure Jinja for LaTeX
     script_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else "."
