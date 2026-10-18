@@ -906,10 +906,20 @@ def extract_links_from_ui():
         if item_type == "phone":
             if label:
                 links.append({"enabled": l["var"].get(), "label": label, "type": "phone"})
+        elif item_type == "email":
+            if label:
+                clean_email = label[7:] if label.lower().startswith("mailto:") else label
+                clean_email = clean_email.strip()
+                links.append({
+                    "enabled": l["var"].get(),
+                    "label": clean_email,
+                    "url": f"mailto:{clean_email}",
+                    "type": "email"
+                })
         else:
             url = l["url_entry"].get().strip() if "url_entry" in l else ""
             if label or url:
-                links.append({"enabled": l["var"].get(), "label": label, "url": url})
+                links.append({"enabled": l["var"].get(), "label": label, "url": url, "type": "link"})
     return links
 
 def move_link(link_data, step):
@@ -957,6 +967,43 @@ def add_phone_widget(parent_container, phone_dict=None):
 
     el = make_entry(row, font=F_BODY_B)
     el.insert(0, phone_dict.get("label", ""))
+    el.pack(side="left", fill="x", expand=True)
+    link_data["label_entry"] = el
+
+    header_widgets["links"].append(link_data)
+    update_scroll()
+
+def add_email_widget(parent_container, email_dict=None):
+    if email_dict is None:
+        email_dict = {"enabled": True, "label": "", "type": "email"}
+
+    card = RoundedCard(parent_container, bg=BG_ITEM, parent_bg=BG_SECTION,
+                       border=BORDER_ITEM, radius=12, padx=12, pady=9)
+    card.pack(fill="x", pady=4)
+    row = card.inner
+
+    var = tk.BooleanVar(value=email_dict.get("enabled", True))
+    Toggle(row, var, BG_ITEM, command=_autosave).pack(side="left", padx=(0, 10))
+
+    make_label(row, "Email", BG_ITEM).pack(side="left", padx=(0, 8))
+
+    link_data = {"var": var, "frame": card, "type": "email"}
+
+    _icon_controls(
+        row, BG_ITEM,
+        lambda: move_link(link_data, -1),
+        lambda: move_link(link_data, 1),
+        lambda: remove_link(link_data),
+    ).pack(side="right", padx=(8, 0))
+
+    raw_val = email_dict.get("label", "")
+    if not raw_val and email_dict.get("url", "").startswith("mailto:"):
+        raw_val = email_dict.get("url", "")[7:]
+    elif raw_val.lower().startswith("mailto:"):
+        raw_val = raw_val[7:]
+
+    el = make_entry(row, font=F_BODY_B)
+    el.insert(0, raw_val)
     el.pack(side="left", fill="x", expand=True)
     link_data["label_entry"] = el
 
@@ -1029,8 +1076,13 @@ def build_header_widget():
     links_container.pack(fill="x")
 
     for link in master_data.get("links", []) or []:
-        if link.get("type") == "phone" or (link.get("url") == "" and any(c.isdigit() for c in str(link.get("label", "")))):
+        l_type = link.get("type")
+        url = str(link.get("url", ""))
+        lbl = str(link.get("label", ""))
+        if l_type == "phone" or (l_type != "email" and url == "" and any(c.isdigit() for c in lbl) and "@" not in lbl):
             add_phone_widget(links_container, link)
+        elif l_type == "email" or url.lower().startswith("mailto:") or ("@" in lbl and "." in lbl and not url.startswith("http")):
+            add_email_widget(links_container, link)
         else:
             add_link_widget(links_container, link)
 
@@ -1040,6 +1092,12 @@ def build_header_widget():
     PillButton(
         btn_row, "+ Add Phone Number",
         lambda: add_phone_widget(links_container),
+        parent_bg=BG_SECTION, bg=BG_ITEM, fg=FG_MUTED, border=BORDER_ITEM, padx=12, pady=5,
+    ).pack(side="left", padx=(0, 8))
+
+    PillButton(
+        btn_row, "+ Add Email",
+        lambda: add_email_widget(links_container),
         parent_bg=BG_SECTION, bg=BG_ITEM, fg=FG_MUTED, border=BORDER_ITEM, padx=12, pady=5,
     ).pack(side="left", padx=(0, 8))
 
