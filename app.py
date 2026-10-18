@@ -339,8 +339,19 @@ root.bind_all("<Key>", _on_key_scroll)
 # State tracking for all UI widgets
 sections_widgets = []
 
+_scroll_update_pending = False
+
 def update_scroll():
-    scrollable_frame.update_idletasks()
+    if not globals().get("_is_ui_initialized", False):
+        return
+    global _scroll_update_pending
+    if not _scroll_update_pending:
+        _scroll_update_pending = True
+        root.after_idle(_do_update_scroll)
+
+def _do_update_scroll():
+    global _scroll_update_pending
+    _scroll_update_pending = False
     canvas.configure(scrollregion=canvas.bbox("all"))
 
 # Extract data tree from UI
@@ -1042,8 +1053,8 @@ def build_header_widget():
 build_header_widget()
 for sec in master_data.get("sections", []):
     add_section_widget(sec)
-update_scroll()
 _is_ui_initialized = True
+update_scroll()
 
 # Escape special characters that have special meaning in LaTeX
 def escape_latex(s):
