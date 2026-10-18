@@ -1205,14 +1205,14 @@ def get_resume_base_filename():
             return f"{safe_name}'s_Resume"
     return "Resume"
 
-def get_next_download_paths(downloads_dir, base_name):
-    """Find next available versioned filename: [Name]'s_Resume_(1).pdf, [Name]'s_Resume_(2).pdf, etc."""
+def get_next_download_path(downloads_dir, base_name):
+    """Find next available versioned filename: [Name]'s_Resume.pdf, [Name]'s_Resume_(1).pdf, etc."""
     base_pdf = os.path.join(downloads_dir, f"{base_name}.pdf")
     base_space_pdf = os.path.join(downloads_dir, f"{base_name.replace('_', ' ')}.pdf")
 
     # If neither base file exists yet in Downloads, use the base filename
     if not os.path.exists(base_pdf) and not os.path.exists(base_space_pdf):
-        return base_pdf, os.path.join(downloads_dir, f"{base_name}.tex")
+        return base_pdf
 
     # If existing file(s) exist, find the first unused version number: (1), (2), (3)...
     idx = 1
@@ -1223,8 +1223,7 @@ def get_next_download_paths(downloads_dir, base_name):
         cand_space_pdf3 = os.path.join(downloads_dir, f"{base_name.replace('_', ' ')}_({idx}).pdf")
         if (not os.path.exists(cand_pdf) and not os.path.exists(cand_space_pdf)
                 and not os.path.exists(cand_space_pdf2) and not os.path.exists(cand_space_pdf3)):
-            cand_tex = os.path.join(downloads_dir, f"{base_name}_({idx}).tex")
-            return cand_pdf, cand_tex
+            return cand_pdf
         idx += 1
 
 def render_latex_source():
@@ -1289,24 +1288,24 @@ def render_latex_source():
     rendered_tex = template.render(final_data)
 
     base_name = get_resume_base_filename()
-    downloads_dir = os.path.expanduser("~/Downloads")
-    os.makedirs(downloads_dir, exist_ok=True)
-    tex_path = os.path.join(downloads_dir, f"{base_name}.tex")
-    pdf_path = os.path.join(downloads_dir, f"{base_name}.pdf")
+    build_dir = os.path.expanduser("~/.resume_build")
+    os.makedirs(build_dir, exist_ok=True)
+    tex_path = os.path.join(build_dir, f"{base_name}.tex")
+    pdf_path = os.path.join(build_dir, f"{base_name}.pdf")
 
     with open(tex_path, "w", encoding="utf-8") as f:
         f.write(rendered_tex)
 
-    return tex_path, pdf_path, downloads_dir, base_name
+    return tex_path, pdf_path, build_dir, base_name
 
-def compile_tex_to_pdf(compiler_type, compiler_bin, downloads_dir, tex_path, pdf_path, base_name):
+def compile_tex_to_pdf(compiler_type, compiler_bin, build_dir, tex_path, pdf_path, base_name):
     """Pure subprocess compiler worker (no Tkinter widgets touched, safe for background threads)."""
     if not compiler_type:
         return (False, pdf_path, tex_path, "NO_COMPILER")
 
     try:
         if compiler_type == "tectonic":
-            cmd = [compiler_bin, "-X", "compile", "--outdir", downloads_dir, tex_path]
+            cmd = [compiler_bin, "-X", "compile", "--outdir", build_dir, tex_path]
             proc = subprocess.run(cmd, capture_output=True, text=True)
             if proc.returncode == 0 and os.path.exists(pdf_path):
                 return (True, pdf_path, tex_path, None)
@@ -1314,12 +1313,12 @@ def compile_tex_to_pdf(compiler_type, compiler_bin, downloads_dir, tex_path, pdf
             return (False, pdf_path, tex_path, err or "Tectonic compilation failed.")
 
         elif compiler_type == "pdflatex":
-            cmd = [compiler_bin, "-interaction=nonstopmode", "-output-directory", downloads_dir, tex_path]
+            cmd = [compiler_bin, "-interaction=nonstopmode", "-output-directory", build_dir, tex_path]
             proc = subprocess.run(cmd, capture_output=True, text=True)
 
             # Clean auxiliary files
             for ext in [".aux", ".out"]:
-                aux_file = os.path.join(downloads_dir, f"{base_name}{ext}")
+                aux_file = os.path.join(build_dir, f"{base_name}{ext}")
                 if os.path.exists(aux_file):
                     try:
                         os.remove(aux_file)
@@ -1327,7 +1326,7 @@ def compile_tex_to_pdf(compiler_type, compiler_bin, downloads_dir, tex_path, pdf
                         pass
 
             if proc.returncode == 0 and os.path.exists(pdf_path):
-                log_file = os.path.join(downloads_dir, f"{base_name}.log")
+                log_file = os.path.join(build_dir, f"{base_name}.log")
                 if os.path.exists(log_file):
                     try:
                         os.remove(log_file)
@@ -1335,7 +1334,7 @@ def compile_tex_to_pdf(compiler_type, compiler_bin, downloads_dir, tex_path, pdf
                         pass
                 return (True, pdf_path, tex_path, None)
 
-            log_file = os.path.join(downloads_dir, f"{base_name}.log")
+            log_file = os.path.join(build_dir, f"{base_name}.log")
             log_tail = ""
             if os.path.exists(log_file):
                 try:
@@ -1350,10 +1349,10 @@ def compile_tex_to_pdf(compiler_type, compiler_bin, downloads_dir, tex_path, pdf
         return (False, pdf_path, tex_path, str(e))
 
 def compile_resume_pdf():
-    """Compile LaTeX source to PDF in ~/Downloads. Returns (success, pdf_path, tex_path, err_msg)."""
-    tex_path, pdf_path, downloads_dir, base_name = render_latex_source()
+    """Compile LaTeX source to PDF in ~/.resume_build. Returns (success, pdf_path, tex_path, err_msg)."""
+    tex_path, pdf_path, build_dir, base_name = render_latex_source()
     compiler_type, compiler_bin = find_latex_compiler()
-    return compile_tex_to_pdf(compiler_type, compiler_bin, downloads_dir, tex_path, pdf_path, base_name)
+    return compile_tex_to_pdf(compiler_type, compiler_bin, build_dir, tex_path, pdf_path, base_name)
 
 _is_compiling = False
 _compile_queued = False
@@ -1393,7 +1392,7 @@ def recompile_preview_async():
 
     # Render LaTeX on the main thread (reads UI widgets in <2ms)
     try:
-        tex_path, pdf_path, downloads_dir, base_name = render_latex_source()
+        tex_path, pdf_path, build_dir, base_name = render_latex_source()
         compiler_type, compiler_bin = find_latex_compiler()
     except Exception as e:
         print(f"Error rendering LaTeX source: {e}")
@@ -1410,7 +1409,7 @@ def recompile_preview_async():
 
     def _worker():
         try:
-            res = compile_tex_to_pdf(compiler_type, compiler_bin, downloads_dir, tex_path, pdf_path, base_name)
+            res = compile_tex_to_pdf(compiler_type, compiler_bin, build_dir, tex_path, pdf_path, base_name)
         except Exception as e:
             res = (False, pdf_path, tex_path, str(e))
         _compile_queue.put(res)
@@ -1442,14 +1441,15 @@ def show_compiler_install_dialog(tex_path=None):
         fg=FG
     ).pack(anchor="w", padx=24, pady=(20, 6))
 
-    saved_note = f"Your resume source was saved to:\n{tex_path}" if tex_path else "Your resume source was saved to your Downloads folder."
+    saved_note = f"Your resume source was generated at:\n{tex_path}" if tex_path else ""
     msg = (
         "To compile and preview your resume directly, install Tectonic (modern, fast XeTeX engine):\n\n"
         "        brew install tectonic\n\n"
         "or install BasicTeX with:\n"
-        "        brew install --cask basictex\n\n"
-        f"{saved_note}"
+        "        brew install --cask basictex"
     )
+    if saved_note:
+        msg += f"\n\n{saved_note}"
     tk.Label(
         dialog,
         text=msg,
@@ -1511,15 +1511,13 @@ def generate_pdf():
 
     downloads_dir = os.path.expanduser("~/Downloads")
     base_name = get_resume_base_filename()
-    download_pdf_path, download_tex_path = get_next_download_paths(downloads_dir, base_name)
+    download_pdf_path = get_next_download_path(downloads_dir, base_name)
 
     # Copy to fresh versioned file to guarantee a new inode and current "Date Added" in Finder
     try:
         shutil.copyfile(pdf_path, download_pdf_path)
-        shutil.copyfile(tex_path, download_tex_path)
     except Exception as e:
         download_pdf_path = pdf_path
-        download_tex_path = tex_path
 
     messagebox.showinfo(
         "Download Complete",
@@ -1604,6 +1602,12 @@ PillButton(
 def _init_preview_on_launch():
     try:
         base_name = get_resume_base_filename()
+        build_dir = os.path.expanduser("~/.resume_build")
+        build_pdf = os.path.join(build_dir, f"{base_name}.pdf")
+        if os.path.exists(build_pdf):
+            preview_pane.load_pdf(build_pdf)
+            return
+
         downloads_dir = os.path.expanduser("~/Downloads")
         pdf_path = os.path.join(downloads_dir, f"{base_name}.pdf")
         if os.path.exists(pdf_path):
