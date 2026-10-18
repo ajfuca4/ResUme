@@ -5,9 +5,11 @@ import os
 import sys
 import shutil
 import subprocess
+import threading
+import queue
 from jinja2 import Environment, FileSystemLoader
 from ui_widgets import *  # dark theme palette, fonts, RoundedCard, PillButton, Toggle, inputs
-from pdf_preview import PDFPreviewWindow
+from pdf_preview import PDFPreviewPane, PDFPreviewWindow
 
 # 1. Load or initialize master YAML file
 def load_data():
@@ -137,8 +139,15 @@ master_data = load_data()
 # 2. Setup native desktop window
 root = tk.Tk()
 root.title("Local Resume Builder - Dynamic Section Editor")
-root.geometry("900x900")
-root.minsize(800, 0)
+
+screen_w = root.winfo_screenwidth()
+screen_h = root.winfo_screenheight()
+win_w = min(1440, max(1000, screen_w - 60))
+win_h = min(920, screen_h - 70)
+pos_x = max(10, (screen_w - win_w) // 2)
+pos_y = max(30, (screen_h - win_h) // 2)
+root.geometry(f"{win_w}x{win_h}+{pos_x}+{pos_y}")
+root.minsize(1000, 500)
 root.configure(bg=BG_APP)
 
 # Dark, arrow-less scrollbar ('clam' theme allows full colour control on macOS)
@@ -181,10 +190,26 @@ tk.Label(
 action_frame = tk.Frame(root, pady=12, bg=BG_BAR)
 action_frame.pack(side="bottom", fill="x")
 tk.Frame(root, bg=BORDER_BAR, height=1).pack(side="bottom", fill="x")
+autosave_lbl = None
 
-# Scrollable canvas for dynamic resume components (occupies all remaining space)
-canvas_container = tk.Frame(root, bg=BG_APP)
-canvas_container.pack(side="top", fill="both", expand=True, padx=(12, 4), pady=(0, 6))
+# Horizontal Paned Window splitting Editor (Left) and Live Preview (Right)
+content_paned = tk.PanedWindow(
+    root,
+    orient=tk.HORIZONTAL,
+    bg=BORDER_BAR,
+    sashwidth=4,
+    sashpad=0,
+    bd=0,
+    opaqueresize=True
+)
+content_paned.pack(side="top", fill="both", expand=True)
+
+# Left Pane: Scrollable Checklist Editor
+checklist_pane = tk.Frame(content_paned, bg=BG_APP)
+content_paned.add(checklist_pane, minsize=480, stretch="always")
+
+canvas_container = tk.Frame(checklist_pane, bg=BG_APP)
+canvas_container.pack(fill="both", expand=True, padx=(12, 4), pady=(0, 6))
 
 canvas = tk.Canvas(canvas_container, borderwidth=0, highlightthickness=0, yscrollincrement=1, bg=BG_APP)
 scrollbar = ttk.Scrollbar(canvas_container, orient="vertical", command=canvas.yview, style="Dark.Vertical.TScrollbar")
@@ -206,19 +231,55 @@ canvas.configure(yscrollcommand=scrollbar.set)
 canvas.pack(side="left", fill="both", expand=True)
 scrollbar.pack(side="right", fill="y", pady=4)
 
+# Right Pane: Embedded Live PDF Preview
+preview_pane = PDFPreviewPane(
+    content_paned,
+    recompile_callback=lambda: recompile_for_preview()
+)
+content_paned.add(preview_pane, minsize=420, stretch="always")
+
+def _init_paned_split():
+    root.update_idletasks()
+    total_w = content_paned.winfo_width()
+    if total_w > 800:
+        content_paned.sash_place(0, int(total_w * 0.52), 0)
+
+root.after(120, _init_paned_split)
+
+def get_scroll_target():
+    """Route scrolling to whichever pane is currently under the mouse cursor."""
+    if preview_pane and preview_pane.winfo_ismapped():
+        try:
+            px, py = root.winfo_pointerxy()
+            rx = preview_pane.winfo_rootx()
+            ry = preview_pane.winfo_rooty()
+            rw = preview_pane.winfo_width()
+            rh = preview_pane.winfo_height()
+            if rx <= px <= rx + rw and ry <= py <= ry + rh:
+                return preview_pane.canvas
+        except Exception:
+            pass
+    return canvas
+
 # 1. macOS Trackpad Two-Finger Scrolling (<TouchpadScroll>) in Tk 9 Aqua
 def _on_touchpad(event):
     delta = event.delta
     # In Tk 9 Aqua, dxdy is packed into delta: deltaX = dxdy >> 16, deltaY = low 16 bits signed
     low = delta & 0xFFFF
     dy = low if low < 0x8000 else low - 0x10000
-    if dy != 0:
-        # yscrollincrement=1 makes units equal to pixels for smooth 1:1 trackpad scrolling
-        canvas.yview_scroll(-dy, "units")
+    high = (delta >> 16) & 0xFFFF
+    dx = high if high < 0x8000 else high - 0x10000
+
+    target = get_scroll_target()
+    if dy != 0 and hasattr(target, "yview_scroll"):
+        target.yview_scroll(-dy, "units")
+    if dx != 0 and hasattr(target, "xview_scroll") and target == getattr(preview_pane, "canvas", None):
+        target.xview_scroll(-dx, "units")
     return "break"
 
 # 2. Traditional Mouse Wheel Scrolling (<MouseWheel>)
 def _on_mousewheel(event):
+    target = get_scroll_target()
     if sys.platform == "darwin":
         delta = event.delta
         if abs(delta) >= 120:
@@ -227,11 +288,14 @@ def _on_mousewheel(event):
             units = -int(delta * 4)
         if units == 0 and delta != 0:
             units = -4 if delta > 0 else 4
-        canvas.yview_scroll(units, "units")
+        if hasattr(target, "yview_scroll"):
+            target.yview_scroll(units, "units")
     elif event.num == 5 or event.delta < 0:
-        canvas.yview_scroll(25, "units")
+        if hasattr(target, "yview_scroll"):
+            target.yview_scroll(25, "units")
     elif event.num == 4 or event.delta > 0:
-        canvas.yview_scroll(-25, "units")
+        if hasattr(target, "yview_scroll"):
+            target.yview_scroll(-25, "units")
     return "break"
 
 # Bind across ALL widget classes so trackpad gestures scroll the page even when hovering over text boxes/entries
@@ -332,7 +396,15 @@ def extract_sections_from_ui():
     return sections_list
 
 # Autosave to master.yaml
-def save_master_yaml(show_popup=False):
+def save_master_yaml(show_popup=False, recompile_preview=True):
+    global _debounce_save_timer
+    if _debounce_save_timer is not None:
+        try:
+            root.after_cancel(_debounce_save_timer)
+        except Exception:
+            pass
+        _debounce_save_timer = None
+
     master_data["sections"] = extract_sections_from_ui()
     if header_widgets:
         master_data["name"] = header_widgets["name_entry"].get().strip()
@@ -341,12 +413,59 @@ def save_master_yaml(show_popup=False):
     try:
         with open("master.yaml", "w", encoding="utf-8") as f:
             yaml.dump(master_data, f, sort_keys=False, allow_unicode=True)
+        if recompile_preview:
+            try:
+                recompile_preview_async()
+            except Exception:
+                pass
         return True
     except Exception as e:
         print(f"Failed to autosave master.yaml: {e}")
         return False
 
 _is_ui_initialized = False
+_debounce_save_timer = None
+_save_indicator_timer = None
+
+# Non-character navigation and modifier keys that shouldn't trigger an autosave timer
+_IGNORED_KEYSYMS = {
+    "Shift_L", "Shift_R", "Control_L", "Control_R",
+    "Alt_L", "Alt_R", "Meta_L", "Meta_R", "Super_L", "Super_R",
+    "Caps_Lock", "Num_Lock", "Scroll_Lock",
+    "Up", "Down", "Left", "Right", "Home", "End", "Prior", "Next"
+}
+
+def schedule_debounced_save(event=None):
+    """Debounce saves: reset timer on keystrokes and only write to disk after 500ms of inactivity."""
+    global _debounce_save_timer, _save_indicator_timer
+    if not _is_ui_initialized:
+        return
+    if event and event.keysym in _IGNORED_KEYSYMS:
+        return
+
+    if autosave_lbl:
+        autosave_lbl.configure(text="Saving...", fg=FG_MUTED)
+
+    if _debounce_save_timer is not None:
+        try:
+            root.after_cancel(_debounce_save_timer)
+        except Exception:
+            pass
+
+    _debounce_save_timer = root.after(500, _perform_debounced_save)
+
+def _perform_debounced_save():
+    global _debounce_save_timer, _save_indicator_timer
+    _debounce_save_timer = None
+    success = save_master_yaml(show_popup=False)
+    if autosave_lbl and success:
+        autosave_lbl.configure(text="All changes saved", fg=FG_DIM)
+        if _save_indicator_timer is not None:
+            try:
+                root.after_cancel(_save_indicator_timer)
+            except Exception:
+                pass
+        _save_indicator_timer = root.after(2500, lambda: autosave_lbl.configure(text="") if autosave_lbl.cget("text") == "All changes saved" else None)
 
 # Autosave when any field loses focus (clicked away / deselected)
 def on_field_focus_out(event):
@@ -355,6 +474,8 @@ def on_field_focus_out(event):
     try:
         if event.widget.winfo_toplevel() == root:
             save_master_yaml(show_popup=False)
+            if autosave_lbl:
+                autosave_lbl.configure(text="All changes saved", fg=FG_DIM)
     except Exception:
         pass
 
@@ -378,6 +499,28 @@ def on_entry_return(event):
     except Exception:
         pass
 
+def on_app_close():
+    """Ensure any pending debounced edits are flushed before window closes."""
+    try:
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
+    finally:
+        root.destroy()
+
+root.protocol("WM_DELETE_WINDOW", on_app_close)
+
+def _on_any_key(event):
+    if not _is_ui_initialized:
+        return
+    w = event.widget
+    try:
+        if w and (isinstance(w, (tk.Entry, tk.Text)) or getattr(w, "winfo_class", lambda: "")() in ("Entry", "Text")):
+            schedule_debounced_save(event)
+    except Exception:
+        pass
+
+root.bind_all("<KeyRelease>", _on_any_key, add="+")
+root.bind_all("<KeyPress>", _on_any_key, add="+")
 root.bind_class("Entry", "<FocusOut>", on_field_focus_out, add="+")
 root.bind_class("Text", "<FocusOut>", on_field_focus_out, add="+")
 root.bind_class("Entry", "<Return>", on_entry_return, add="+")
@@ -1064,11 +1207,8 @@ def render_latex_source():
 
     return tex_path, pdf_path, downloads_dir, base_name
 
-def compile_resume_pdf():
-    """Compile LaTeX source to PDF in ~/Downloads. Returns (success, pdf_path, tex_path, err_msg)."""
-    tex_path, pdf_path, downloads_dir, base_name = render_latex_source()
-    compiler_type, compiler_bin = find_latex_compiler()
-
+def compile_tex_to_pdf(compiler_type, compiler_bin, downloads_dir, tex_path, pdf_path, base_name):
+    """Pure subprocess compiler worker (no Tkinter widgets touched, safe for background threads)."""
     if not compiler_type:
         return (False, pdf_path, tex_path, "NO_COMPILER")
 
@@ -1116,6 +1256,76 @@ def compile_resume_pdf():
 
     except Exception as e:
         return (False, pdf_path, tex_path, str(e))
+
+def compile_resume_pdf():
+    """Compile LaTeX source to PDF in ~/Downloads. Returns (success, pdf_path, tex_path, err_msg)."""
+    tex_path, pdf_path, downloads_dir, base_name = render_latex_source()
+    compiler_type, compiler_bin = find_latex_compiler()
+    return compile_tex_to_pdf(compiler_type, compiler_bin, downloads_dir, tex_path, pdf_path, base_name)
+
+_is_compiling = False
+_compile_queued = False
+_compile_queue = queue.Queue()
+
+def _poll_compile_queue():
+    """Poll queue on the main Tkinter thread for finished background compilations."""
+    global _is_compiling, _compile_queued
+    try:
+        while not _compile_queue.empty():
+            success, pdf_path, tex_path, err = _compile_queue.get_nowait()
+            _is_compiling = False
+
+            if success and pdf_path and os.path.exists(pdf_path):
+                if preview_pane:
+                    preview_pane.load_pdf(pdf_path)
+            else:
+                if preview_pane and hasattr(preview_pane, "status_lbl"):
+                    preview_pane.status_lbl.configure(text="Compile issue")
+
+            if _compile_queued:
+                _compile_queued = False
+                recompile_preview_async()
+    except Exception:
+        pass
+    root.after(80, _poll_compile_queue)
+
+def recompile_preview_async():
+    """Compile LaTeX to PDF in a background thread and update the preview pane without blocking the UI."""
+    global _is_compiling, _compile_queued
+    if not preview_pane:
+        return
+
+    if _is_compiling:
+        _compile_queued = True
+        return
+
+    # Render LaTeX on the main thread (reads UI widgets in <2ms)
+    try:
+        tex_path, pdf_path, downloads_dir, base_name = render_latex_source()
+        compiler_type, compiler_bin = find_latex_compiler()
+    except Exception as e:
+        print(f"Error rendering LaTeX source: {e}")
+        return
+
+    if not compiler_type:
+        return
+
+    _is_compiling = True
+    _compile_queued = False
+
+    if preview_pane and hasattr(preview_pane, "status_lbl"):
+        preview_pane.status_lbl.configure(text="Compiling...")
+
+    def _worker():
+        try:
+            res = compile_tex_to_pdf(compiler_type, compiler_bin, downloads_dir, tex_path, pdf_path, base_name)
+        except Exception as e:
+            res = (False, pdf_path, tex_path, str(e))
+        _compile_queue.put(res)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+root.after(100, _poll_compile_queue)
 
 def show_compiler_install_dialog(tex_path=None):
     """Dialog guiding user on how to install a LaTeX compiler."""
@@ -1166,36 +1376,31 @@ def show_compiler_install_dialog(tex_path=None):
     ).pack(side="right")
 
 def recompile_for_preview():
-    save_master_yaml(show_popup=False)
+    save_master_yaml(show_popup=False, recompile_preview=False)
     success, pdf_path, tex_path, err = compile_resume_pdf()
-    return (success, err)
+    return (success, pdf_path, err)
 
 def on_preview_click():
-    global preview_window
-    if not save_master_yaml(show_popup=False):
+    if not save_master_yaml(show_popup=False, recompile_preview=False):
         return
+
+    preview_pane.status_lbl.configure(text="Compiling...")
+    root.update_idletasks()
 
     success, pdf_path, tex_path, err_msg = compile_resume_pdf()
 
     if not success:
+        preview_pane.status_lbl.configure(text="Compile failed")
         if err_msg == "NO_COMPILER":
             show_compiler_install_dialog(tex_path)
         else:
-            messagebox.showerror("LaTeX Compilation Error", err_msg)
+            messagebox.showerror("LaTeX Compilation Error", err_msg, parent=root)
         return
 
-    if preview_window and preview_window.winfo_exists():
-        preview_window.load_pdf(pdf_path)
-        preview_window.deiconify()
-        preview_window.lift()
-    else:
-        preview_window = PDFPreviewWindow(
-            root, pdf_path, tex_path,
-            recompile_callback=recompile_for_preview
-        )
+    preview_pane.load_pdf(pdf_path)
 
 def generate_pdf():
-    if not save_master_yaml(show_popup=False):
+    if not save_master_yaml(show_popup=False, recompile_preview=False):
         return
 
     success, pdf_path, tex_path, err_msg = compile_resume_pdf()
@@ -1280,15 +1485,37 @@ PillButton(
     bg=BG_ITEM, fg=FG, border=BORDER_ITEM, font=F_BTN_B, padx=14, pady=7, radius=10,
 ).pack(side="left", padx=(20, 10))
 
+autosave_lbl = tk.Label(action_frame, text="", font=F_LABEL, bg=BG_BAR, fg=FG_MUTED)
+autosave_lbl.pack(side="left", padx=10)
+
 PillButton(
     action_frame, "Download PDF", generate_pdf, parent_bg=BG_BAR,
     bg=FG, fg=BG_APP, hover_bg="#ffffff", font=F_BTN_B, padx=16, pady=7, radius=10,
 ).pack(side="right", padx=(8, 20))
 
-PillButton(
-    action_frame, "Preview", on_preview_click, parent_bg=BG_BAR,
-    bg=BG_ITEM, fg=FG, border=BORDER_ITEM, font=F_BTN_B, padx=14, pady=7, radius=10,
-).pack(side="right", padx=(0, 6))
+
+# Try to load existing PDF on launch into the embedded preview pane
+def _init_preview_on_launch():
+    try:
+        base_name = get_resume_base_filename()
+        downloads_dir = os.path.expanduser("~/Downloads")
+        pdf_path = os.path.join(downloads_dir, f"{base_name}.pdf")
+        if os.path.exists(pdf_path):
+            preview_pane.load_pdf(pdf_path)
+        else:
+            output_fallback = os.path.join(downloads_dir, "output.pdf")
+            if os.path.exists(output_fallback):
+                preview_pane.load_pdf(output_fallback)
+            else:
+                preview_pane.show_message("Preview ready.\n\nChanges automatically compile to PDF.")
+    except Exception as e:
+        preview_pane.show_message(f"Preview ready.\n\n{e}")
+
+root.after(250, _init_preview_on_launch)
+
+# Global keyboard shortcuts for live preview compile
+root.bind("<Command-r>", lambda e: on_preview_click())
+root.bind("<F5>", lambda e: on_preview_click())
 
 if __name__ == "__main__":
     root.mainloop()
