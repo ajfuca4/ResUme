@@ -1190,7 +1190,7 @@ def find_latex_compiler():
     return (None, None)
 
 def get_resume_base_filename():
-    """Generate dynamic filename based on the user's name: {Name}'s Resume."""
+    """Generate dynamic filename based on the user's name: {Name}'s_Resume."""
     name = ""
     if header_widgets and "name_entry" in header_widgets:
         name = header_widgets["name_entry"].get().strip()
@@ -1200,9 +1200,32 @@ def get_resume_base_filename():
     if name:
         # Sanitize filename (remove characters that are invalid in filenames)
         safe_name = "".join(c for c in name if c not in r'/\:*?"<>|').strip()
+        safe_name = safe_name.replace(" ", "_")
         if safe_name:
-            return f"{safe_name}'s Resume"
+            return f"{safe_name}'s_Resume"
     return "Resume"
+
+def get_next_download_paths(downloads_dir, base_name):
+    """Find next available versioned filename: [Name]'s_Resume_(1).pdf, [Name]'s_Resume_(2).pdf, etc."""
+    base_pdf = os.path.join(downloads_dir, f"{base_name}.pdf")
+    base_space_pdf = os.path.join(downloads_dir, f"{base_name.replace('_', ' ')}.pdf")
+
+    # If neither base file exists yet in Downloads, use the base filename
+    if not os.path.exists(base_pdf) and not os.path.exists(base_space_pdf):
+        return base_pdf, os.path.join(downloads_dir, f"{base_name}.tex")
+
+    # If existing file(s) exist, find the first unused version number: (1), (2), (3)...
+    idx = 1
+    while True:
+        cand_pdf = os.path.join(downloads_dir, f"{base_name}_({idx}).pdf")
+        cand_space_pdf = os.path.join(downloads_dir, f"{base_name} ({idx}).pdf")
+        cand_space_pdf2 = os.path.join(downloads_dir, f"{base_name.replace('_', ' ')} ({idx}).pdf")
+        cand_space_pdf3 = os.path.join(downloads_dir, f"{base_name.replace('_', ' ')}_({idx}).pdf")
+        if (not os.path.exists(cand_pdf) and not os.path.exists(cand_space_pdf)
+                and not os.path.exists(cand_space_pdf2) and not os.path.exists(cand_space_pdf3)):
+            cand_tex = os.path.join(downloads_dir, f"{base_name}_({idx}).tex")
+            return cand_pdf, cand_tex
+        idx += 1
 
 def render_latex_source():
     """Render current UI state through Jinja2 to ~/<Name>'s Resume.tex."""
@@ -1474,23 +1497,37 @@ def generate_pdf():
 
     success, pdf_path, tex_path, err_msg = compile_resume_pdf()
 
-    if success:
-        messagebox.showinfo(
-            "Success",
-            f"Resume compiled successfully to your Downloads folder!\n\n"
-            f"PDF: {pdf_path}\n"
-            f"TeX: {tex_path}\n\n"
-            f"(master.yaml also updated)"
-        )
-    elif err_msg == "NO_COMPILER":
-        show_compiler_install_dialog(tex_path)
-    else:
-        messagebox.showerror(
-            "Compilation Error",
-            f"LaTeX compilation failed.\n\n"
-            f"Source saved to: {tex_path}\n\n"
-            f"Error details:\n{err_msg}"
-        )
+    if not success:
+        if err_msg == "NO_COMPILER":
+            show_compiler_install_dialog(tex_path)
+        else:
+            messagebox.showerror(
+                "Compilation Error",
+                f"LaTeX compilation failed.\n\n"
+                f"Source saved to: {tex_path}\n\n"
+                f"Error details:\n{err_msg}"
+            )
+        return
+
+    downloads_dir = os.path.expanduser("~/Downloads")
+    base_name = get_resume_base_filename()
+    download_pdf_path, download_tex_path = get_next_download_paths(downloads_dir, base_name)
+
+    # Copy to fresh versioned file to guarantee a new inode and current "Date Added" in Finder
+    try:
+        shutil.copyfile(pdf_path, download_pdf_path)
+        shutil.copyfile(tex_path, download_tex_path)
+    except Exception as e:
+        download_pdf_path = pdf_path
+        download_tex_path = tex_path
+
+    messagebox.showinfo(
+        "Download Complete",
+        f"Resume downloaded successfully to your Downloads folder!\n\n"
+        f"File: {os.path.basename(download_pdf_path)}\n"
+        f"Location: {download_pdf_path}\n\n"
+        f"(master.yaml also updated)"
+    )
 
 # Function to add new custom section (custom modal dialog compatible with Tk 9 on macOS)
 def prompt_new_section():
@@ -1572,11 +1609,15 @@ def _init_preview_on_launch():
         if os.path.exists(pdf_path):
             preview_pane.load_pdf(pdf_path)
         else:
-            output_fallback = os.path.join(downloads_dir, "output.pdf")
-            if os.path.exists(output_fallback):
-                preview_pane.load_pdf(output_fallback)
+            space_pdf = os.path.join(downloads_dir, f"{base_name.replace('_', ' ')}.pdf")
+            if os.path.exists(space_pdf):
+                preview_pane.load_pdf(space_pdf)
             else:
-                preview_pane.show_message("Preview ready.\n\nChanges automatically compile to PDF.")
+                output_fallback = os.path.join(downloads_dir, "output.pdf")
+                if os.path.exists(output_fallback):
+                    preview_pane.load_pdf(output_fallback)
+                else:
+                    preview_pane.show_message("Preview ready.\n\nChanges automatically compile to PDF.")
     except Exception as e:
         preview_pane.show_message(f"Preview ready.\n\n{e}")
 
