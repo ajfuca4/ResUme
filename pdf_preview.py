@@ -64,6 +64,13 @@ class PDFPreviewPane(tk.Frame):
         )
         self.status_lbl.pack(side="left", padx=2)
 
+        self.refresh_btn = PillButton(
+            left_box, "↻ Recompile", self.on_recompile,
+            parent_bg=BG_BAR, bg=BG_ITEM, fg=FG, border=BORDER_ITEM,
+            font=F_BTN_B, padx=8, pady=4, radius=6
+        )
+        self.refresh_btn.pack(side="left", padx=(8, 2))
+
         # Right controls: Page navigation, Zoom, Fit
         right_box = tk.Frame(self.toolbar, bg=BG_BAR)
         right_box.pack(side="right")
@@ -249,6 +256,12 @@ class PDFPreviewPane(tk.Frame):
             prev_xview, prev_yview = 0.0, 0.0
 
         try:
+            if self.doc:
+                try:
+                    self.doc.close()
+                except Exception:
+                    pass
+                self.doc = None
             self.doc = pdfium.PdfDocument(self.pdf_path)
             self.total_pages = len(self.doc)
             self.current_page = max(0, min(self.current_page, self.total_pages - 1))

@@ -1934,11 +1934,16 @@ PillButton(
 # Try to load existing PDF on launch into the embedded preview pane
 def _init_preview_on_launch():
     try:
+        script_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else "."
+        tmpl_path = os.path.join(script_dir, "jakes-resume-tmpl.tex")
         base_name = get_resume_base_filename()
         build_dir = os.path.expanduser("~/.resume_build")
         build_pdf = os.path.join(build_dir, f"{base_name}.pdf")
         if os.path.exists(build_pdf):
             preview_pane.load_pdf(build_pdf)
+            # If the template was modified more recently than the existing PDF, recompile immediately
+            if os.path.exists(tmpl_path) and os.path.getmtime(tmpl_path) > os.path.getmtime(build_pdf):
+                recompile_preview_async()
             return
 
         downloads_dir = os.path.expanduser("~/Downloads")
@@ -1955,10 +1960,32 @@ def _init_preview_on_launch():
                     preview_pane.load_pdf(output_fallback)
                 else:
                     preview_pane.show_message("Preview ready.\n\nChanges automatically compile to PDF.")
+        recompile_preview_async()
     except Exception as e:
         preview_pane.show_message(f"Preview ready.\n\n{e}")
 
 root.after(250, _init_preview_on_launch)
+
+_last_tmpl_mtime = None
+
+def _watch_template_file():
+    """Continuously monitor jakes-resume-tmpl.tex and trigger preview recompile on file change."""
+    global _last_tmpl_mtime
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__)) if "__file__" in globals() else "."
+        tmpl_path = os.path.join(script_dir, "jakes-resume-tmpl.tex")
+        if os.path.exists(tmpl_path):
+            current_mtime = os.path.getmtime(tmpl_path)
+            if _last_tmpl_mtime is None:
+                _last_tmpl_mtime = current_mtime
+            elif current_mtime != _last_tmpl_mtime:
+                _last_tmpl_mtime = current_mtime
+                recompile_preview_async()
+    except Exception:
+        pass
+    root.after(500, _watch_template_file)
+
+root.after(500, _watch_template_file)
 
 # Global keyboard shortcuts for live preview compile
 root.bind("<Command-r>", lambda e: on_preview_click())
