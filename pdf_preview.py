@@ -199,7 +199,10 @@ class PDFPreviewPane(tk.Frame):
             return "break"
 
         self.canvas.bind("<MouseWheel>", _on_wheel)
-        self.canvas.bind("<TouchpadScroll>", _on_touchpad)
+        try:
+            self.canvas.bind("<TouchpadScroll>", _on_touchpad)
+        except tk.TclError:
+            pass
 
     def _on_canvas_configure(self, event):
         if not self._page_records:

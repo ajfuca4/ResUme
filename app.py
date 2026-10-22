@@ -1,8 +1,17 @@
-import tkinter as tk
-from tkinter import messagebox, ttk
-import yaml
-import os
 import sys
+import os
+
+# Auto-re-execute using the project's virtual environment if dependencies are missing in global python
+_venv_python = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv", "bin", "python3")
+if os.path.exists(_venv_python) and os.path.realpath(sys.executable) != os.path.realpath(_venv_python):
+    try:
+        import yaml
+    except ImportError:
+        os.execv(_venv_python, [_venv_python] + sys.argv)
+
+import tkinter as tk
+from tkinter import messagebox, ttk, filedialog
+import yaml
 import shutil
 import subprocess
 import threading
@@ -300,12 +309,18 @@ def _on_mousewheel(event):
 
 # Bind across ALL widget classes so trackpad gestures scroll the page even when hovering over text boxes/entries
 for widget_class in ("Text", "Entry", "Label", "Button", "Checkbutton", "Frame", "LabelFrame", "Canvas"):
-    root.bind_class(widget_class, "<TouchpadScroll>", _on_touchpad)
+    try:
+        root.bind_class(widget_class, "<TouchpadScroll>", _on_touchpad)
+    except tk.TclError:
+        pass
     root.bind_class(widget_class, "<MouseWheel>", _on_mousewheel)
     root.bind_class(widget_class, "<Button-4>", _on_mousewheel)
     root.bind_class(widget_class, "<Button-5>", _on_mousewheel)
 
-root.bind_all("<TouchpadScroll>", _on_touchpad)
+try:
+    root.bind_all("<TouchpadScroll>", _on_touchpad)
+except tk.TclError:
+    pass
 root.bind_all("<MouseWheel>", _on_mousewheel)
 root.bind_all("<Button-4>", _on_mousewheel)
 root.bind_all("<Button-5>", _on_mousewheel)
@@ -679,53 +694,62 @@ def add_item_widget(sec_data, parent_container, item_dict=None):
     if item_dict is None:
         item_dict = {"enabled": True, "field1": "", "field2": "", "field3": "", "field4": "", "bullets": []}
 
+    is_included = item_dict.get("enabled", True)
+
     card = RoundedCard(parent_container, bg=BG_ITEM, parent_bg=BG_SECTION,
-                       border=BORDER_ITEM, radius=12, padx=14, pady=12)
+                       border=BORDER_ITEM, radius=12, padx=14,
+                       pady=12 if is_included else 8)
     card.pack(fill="x", pady=5)
     body = card.inner
 
-    var = tk.BooleanVar(value=item_dict.get("enabled", True))
+    var = tk.BooleanVar(value=is_included)
     item_data = {"var": var, "frame": card, "bullets": []}
 
     fields = tk.Frame(body, bg=BG_ITEM)
     fields.pack(fill="x")
     fields.columnconfigure(2, weight=1)
+    fields.columnconfigure(4, weight=0 if is_included else 1)
 
-    # Row 1: Field 1 (Title/Header) & Field 2 (Dates/Right)
-    Toggle(fields, var, BG_ITEM, command=_autosave).grid(row=0, column=0, padx=(0, 10), sticky="w")
+    # Toggle & Title always on Row 0
+    Toggle(fields, var, BG_ITEM, command=lambda: update_item_collapse_ui()).grid(row=0, column=0, padx=(0, 10), sticky="w")
 
-    make_label(fields, "Title", BG_ITEM).grid(row=0, column=1, sticky="w", padx=(0, 8))
-    e1 = make_entry(fields, font=F_BODY_B)
+    lbl_title = make_label(fields, "Title", BG_ITEM)
+    lbl_title.grid(row=0, column=1, sticky="w", padx=(0, 8))
+    e1 = make_entry(fields, font=F_BODY_B, fg=FG if is_included else FG_DIM)
     e1.insert(0, item_dict.get("field1", ""))
     e1.grid(row=0, column=2, sticky="ew", pady=3)
 
-    make_label(fields, "Dates", BG_ITEM).grid(row=0, column=3, sticky="w", padx=(14, 8))
-    e2 = make_entry(fields, width=20)
+    # Dates widgets
+    lbl_dates = make_label(fields, "Dates", BG_ITEM)
+    e2 = make_entry(fields, width=20, fg=FG)
     e2.insert(0, item_dict.get("field2", ""))
-    e2.grid(row=0, column=4, sticky="ew", pady=3)
+
+    # Subtitle widgets
+    lbl_subtitle = make_label(fields, "Subtitle", BG_ITEM)
+    e3 = make_entry(fields, font=F_BODY_I, fg=FG if is_included else FG_DIM)
+    e3.insert(0, item_dict.get("field3", ""))
+
+    # Location widgets
+    lbl_location = make_label(fields, "Location", BG_ITEM)
+    e4 = make_entry(fields, width=20, fg=FG)
+    e4.insert(0, item_dict.get("field4", ""))
+
+    status_lbl = tk.Label(fields, text="" if is_included else "EXCLUDED", font=F_TAG, bg=BG_ITEM, fg=FG_DIM)
+    status_lbl.grid(row=0, column=5, padx=8, sticky="w")
 
     _icon_controls(
         fields, BG_ITEM,
         lambda: move_item_up(sec_data, item_data),
         lambda: move_item_down(sec_data, item_data),
         lambda: remove_item(sec_data, item_data),
-    ).grid(row=0, column=5, padx=(10, 0), sticky="e")
-
-    # Row 2: Field 3 (Subtext/Company) & Field 4 (Location/Right)
-    make_label(fields, "Subtitle", BG_ITEM).grid(row=1, column=1, sticky="w", padx=(0, 8))
-    e3 = make_entry(fields, font=F_BODY_I)
-    e3.insert(0, item_dict.get("field3", ""))
-    e3.grid(row=1, column=2, sticky="ew", pady=3)
-
-    make_label(fields, "Location", BG_ITEM).grid(row=1, column=3, sticky="w", padx=(14, 8))
-    e4 = make_entry(fields, width=20)
-    e4.insert(0, item_dict.get("field4", ""))
-    e4.grid(row=1, column=4, sticky="ew", pady=3)
+    ).grid(row=0, column=6, padx=(10, 0), sticky="e")
 
     item_data.update({"e1": e1, "e2": e2, "e3": e3, "e4": e4})
 
-    # Bullets container
-    bullets_container = tk.Frame(body, bg=BG_ITEM)
+    # Bullets section container (bullets list + add button)
+    bullets_section = tk.Frame(body, bg=BG_ITEM)
+
+    bullets_container = tk.Frame(bullets_section, bg=BG_ITEM)
     bullets_container.pack(fill="x", padx=(28, 0), pady=(8, 0))
 
     for b in item_dict.get("bullets", []):
@@ -734,10 +758,54 @@ def add_item_widget(sec_data, parent_container, item_dict=None):
         add_bullet_widget(item_data, bullets_container, b_en, b_txt)
 
     PillButton(
-        body, "+ Add Bullet",
+        bullets_section, "+ Add Bullet",
         lambda: add_bullet_widget(item_data, bullets_container, True, ""),
         parent_bg=BG_ITEM, fg=FG_MUTED, font=F_BTN, padx=10, pady=4,
     ).pack(anchor="w", padx=(22, 0), pady=(6, 0))
+
+    if is_included:
+        lbl_dates.grid(row=0, column=3, sticky="w", padx=(14, 8))
+        e2.grid(row=0, column=4, sticky="ew", pady=3)
+        lbl_subtitle.grid(row=1, column=1, sticky="w", padx=(0, 8))
+        e3.grid(row=1, column=2, sticky="ew", pady=3)
+        lbl_location.grid(row=1, column=3, sticky="w", padx=(14, 8))
+        e4.grid(row=1, column=4, sticky="ew", pady=3)
+        bullets_section.pack(fill="x")
+    else:
+        # In collapsed mode: replace Dates with Subtitle on row 0, hide location & bullets
+        lbl_subtitle.grid(row=0, column=3, sticky="w", padx=(14, 8))
+        e3.grid(row=0, column=4, sticky="ew", pady=3)
+
+    def update_item_collapse_ui():
+        if var.get():
+            fields.columnconfigure(4, weight=0)
+            lbl_dates.grid(row=0, column=3, sticky="w", padx=(14, 8))
+            e2.grid(row=0, column=4, sticky="ew", pady=3)
+            lbl_subtitle.grid(row=1, column=1, sticky="w", padx=(0, 8))
+            e3.grid(row=1, column=2, sticky="ew", pady=3)
+            lbl_location.grid(row=1, column=3, sticky="w", padx=(14, 8))
+            e4.grid(row=1, column=4, sticky="ew", pady=3)
+            bullets_section.pack(fill="x")
+            card.set_padding(pady=12)
+            status_lbl.configure(text="")
+            e1.configure(fg=FG)
+            e2.configure(fg=FG)
+            e3.configure(fg=FG)
+        else:
+            fields.columnconfigure(4, weight=1)
+            lbl_dates.grid_remove()
+            e2.grid_remove()
+            lbl_location.grid_remove()
+            e4.grid_remove()
+            lbl_subtitle.grid(row=0, column=3, sticky="w", padx=(14, 8))
+            e3.grid(row=0, column=4, sticky="ew", pady=3)
+            bullets_section.pack_forget()
+            card.set_padding(pady=8)
+            status_lbl.configure(text="EXCLUDED")
+            e1.configure(fg=FG_DIM)
+            e3.configure(fg=FG_DIM)
+        _autosave()
+        update_scroll()
 
     sec_data["entries"].append(item_data)
     update_scroll()
@@ -754,17 +822,23 @@ def add_line_widget(sec_data, parent_container, line_dict=None):
     if line_dict is None:
         line_dict = {"enabled": True, "label": "", "text": ""}
 
+    is_included = line_dict.get("enabled", True)
+
     card = RoundedCard(parent_container, bg=BG_ITEM, parent_bg=BG_SECTION,
-                       border=BORDER_ITEM, radius=12, padx=12, pady=9)
+                       border=BORDER_ITEM, radius=12, padx=12,
+                       pady=9 if is_included else 6)
     card.pack(fill="x", pady=4)
     row = card.inner
 
-    var = tk.BooleanVar(value=line_dict.get("enabled", True))
-    Toggle(row, var, BG_ITEM, command=_autosave).pack(side="left", padx=(0, 10))
+    var = tk.BooleanVar(value=is_included)
+    Toggle(row, var, BG_ITEM, command=lambda: update_line_collapse_ui()).pack(side="left", padx=(0, 10))
 
-    el = make_entry(row, width=16, font=F_BODY_B)
+    el = make_entry(row, width=16, font=F_BODY_B, fg=FG if is_included else FG_DIM)
     el.insert(0, line_dict.get("label", ""))
     el.pack(side="left", padx=(0, 8))
+
+    status_lbl = tk.Label(row, text="" if is_included else "EXCLUDED", font=F_TAG, bg=BG_ITEM, fg=FG_DIM)
+    status_lbl.pack(side="left", padx=4)
 
     line_data = {"var": var, "label_entry": el, "frame": card}
 
@@ -777,8 +851,23 @@ def add_line_widget(sec_data, parent_container, line_dict=None):
 
     et = make_entry(row)
     et.insert(0, line_dict.get("text", ""))
-    et.pack(side="left", fill="x", expand=True)
+    if is_included:
+        et.pack(side="left", fill="x", expand=True)
     line_data["text_entry"] = et
+
+    def update_line_collapse_ui():
+        if var.get():
+            status_lbl.configure(text="")
+            et.pack(side="left", fill="x", expand=True)
+            card.set_padding(pady=9)
+            el.configure(fg=FG)
+        else:
+            et.pack_forget()
+            status_lbl.configure(text="EXCLUDED")
+            card.set_padding(pady=6)
+            el.configure(fg=FG_DIM)
+        _autosave()
+        update_scroll()
 
     sec_data["simple_lines"].append(line_data)
     update_scroll()
@@ -946,15 +1035,21 @@ def add_phone_widget(parent_container, phone_dict=None):
     if phone_dict is None:
         phone_dict = {"enabled": True, "label": "", "type": "phone"}
 
+    is_included = phone_dict.get("enabled", True)
+
     card = RoundedCard(parent_container, bg=BG_ITEM, parent_bg=BG_SECTION,
-                       border=BORDER_ITEM, radius=12, padx=12, pady=9)
+                       border=BORDER_ITEM, radius=12, padx=12,
+                       pady=9 if is_included else 6)
     card.pack(fill="x", pady=4)
     row = card.inner
 
-    var = tk.BooleanVar(value=phone_dict.get("enabled", True))
-    Toggle(row, var, BG_ITEM, command=_autosave).pack(side="left", padx=(0, 10))
+    var = tk.BooleanVar(value=is_included)
+    Toggle(row, var, BG_ITEM, command=lambda: update_phone_collapse_ui()).pack(side="left", padx=(0, 10))
 
     make_label(row, "Phone", BG_ITEM).pack(side="left", padx=(0, 8))
+
+    status_lbl = tk.Label(row, text="" if is_included else "EXCLUDED", font=F_TAG, bg=BG_ITEM, fg=FG_DIM)
+    status_lbl.pack(side="left", padx=4)
 
     link_data = {"var": var, "frame": card, "type": "phone"}
 
@@ -965,10 +1060,22 @@ def add_phone_widget(parent_container, phone_dict=None):
         lambda: remove_link(link_data),
     ).pack(side="right", padx=(8, 0))
 
-    el = make_entry(row, font=F_BODY_B)
+    el = make_entry(row, font=F_BODY_B, fg=FG if is_included else FG_DIM)
     el.insert(0, phone_dict.get("label", ""))
     el.pack(side="left", fill="x", expand=True)
     link_data["label_entry"] = el
+
+    def update_phone_collapse_ui():
+        if var.get():
+            status_lbl.configure(text="")
+            card.set_padding(pady=9)
+            el.configure(fg=FG)
+        else:
+            status_lbl.configure(text="EXCLUDED")
+            card.set_padding(pady=6)
+            el.configure(fg=FG_DIM)
+        _autosave()
+        update_scroll()
 
     header_widgets["links"].append(link_data)
     update_scroll()
@@ -977,15 +1084,21 @@ def add_email_widget(parent_container, email_dict=None):
     if email_dict is None:
         email_dict = {"enabled": True, "label": "", "type": "email"}
 
+    is_included = email_dict.get("enabled", True)
+
     card = RoundedCard(parent_container, bg=BG_ITEM, parent_bg=BG_SECTION,
-                       border=BORDER_ITEM, radius=12, padx=12, pady=9)
+                       border=BORDER_ITEM, radius=12, padx=12,
+                       pady=9 if is_included else 6)
     card.pack(fill="x", pady=4)
     row = card.inner
 
-    var = tk.BooleanVar(value=email_dict.get("enabled", True))
-    Toggle(row, var, BG_ITEM, command=_autosave).pack(side="left", padx=(0, 10))
+    var = tk.BooleanVar(value=is_included)
+    Toggle(row, var, BG_ITEM, command=lambda: update_email_collapse_ui()).pack(side="left", padx=(0, 10))
 
     make_label(row, "Email", BG_ITEM).pack(side="left", padx=(0, 8))
+
+    status_lbl = tk.Label(row, text="" if is_included else "EXCLUDED", font=F_TAG, bg=BG_ITEM, fg=FG_DIM)
+    status_lbl.pack(side="left", padx=4)
 
     link_data = {"var": var, "frame": card, "type": "email"}
 
@@ -1002,10 +1115,22 @@ def add_email_widget(parent_container, email_dict=None):
     elif raw_val.lower().startswith("mailto:"):
         raw_val = raw_val[7:]
 
-    el = make_entry(row, font=F_BODY_B)
+    el = make_entry(row, font=F_BODY_B, fg=FG if is_included else FG_DIM)
     el.insert(0, raw_val)
     el.pack(side="left", fill="x", expand=True)
     link_data["label_entry"] = el
+
+    def update_email_collapse_ui():
+        if var.get():
+            status_lbl.configure(text="")
+            card.set_padding(pady=9)
+            el.configure(fg=FG)
+        else:
+            status_lbl.configure(text="EXCLUDED")
+            card.set_padding(pady=6)
+            el.configure(fg=FG_DIM)
+        _autosave()
+        update_scroll()
 
     header_widgets["links"].append(link_data)
     update_scroll()
@@ -1014,18 +1139,24 @@ def add_link_widget(parent_container, link_dict=None):
     if link_dict is None:
         link_dict = {"enabled": True, "label": "", "url": "", "type": "link"}
 
+    is_included = link_dict.get("enabled", True)
+
     card = RoundedCard(parent_container, bg=BG_ITEM, parent_bg=BG_SECTION,
-                       border=BORDER_ITEM, radius=12, padx=12, pady=9)
+                       border=BORDER_ITEM, radius=12, padx=12,
+                       pady=9 if is_included else 6)
     card.pack(fill="x", pady=4)
     row = card.inner
 
-    var = tk.BooleanVar(value=link_dict.get("enabled", True))
-    Toggle(row, var, BG_ITEM, command=_autosave).pack(side="left", padx=(0, 10))
+    var = tk.BooleanVar(value=is_included)
+    Toggle(row, var, BG_ITEM, command=lambda: update_link_collapse_ui()).pack(side="left", padx=(0, 10))
 
     make_label(row, "Identifier", BG_ITEM).pack(side="left", padx=(0, 6))
-    el = make_entry(row, width=20, font=F_BODY_B)
+    el = make_entry(row, width=20, font=F_BODY_B, fg=FG if is_included else FG_DIM)
     el.insert(0, link_dict.get("label", ""))
     el.pack(side="left", padx=(0, 12))
+
+    status_lbl = tk.Label(row, text="" if is_included else "EXCLUDED", font=F_TAG, bg=BG_ITEM, fg=FG_DIM)
+    status_lbl.pack(side="left", padx=4)
 
     link_data = {"var": var, "label_entry": el, "frame": card, "type": "link"}
 
@@ -1036,11 +1167,31 @@ def add_link_widget(parent_container, link_dict=None):
         lambda: remove_link(link_data),
     ).pack(side="right", padx=(8, 0))
 
-    make_label(row, "Link", BG_ITEM).pack(side="left", padx=(0, 6))
+    lbl_link = make_label(row, "Link", BG_ITEM)
     eu = make_entry(row)
     eu.insert(0, link_dict.get("url", ""))
-    eu.pack(side="left", fill="x", expand=True)
+
+    if is_included:
+        lbl_link.pack(side="left", padx=(0, 6))
+        eu.pack(side="left", fill="x", expand=True)
+
     link_data["url_entry"] = eu
+
+    def update_link_collapse_ui():
+        if var.get():
+            status_lbl.configure(text="")
+            lbl_link.pack(side="left", padx=(0, 6))
+            eu.pack(side="left", fill="x", expand=True)
+            card.set_padding(pady=9)
+            el.configure(fg=FG)
+        else:
+            lbl_link.pack_forget()
+            eu.pack_forget()
+            status_lbl.configure(text="EXCLUDED")
+            card.set_padding(pady=6)
+            el.configure(fg=FG_DIM)
+        _autosave()
+        update_scroll()
 
     header_widgets["links"].append(link_data)
     update_scroll()
