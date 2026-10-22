@@ -279,16 +279,72 @@ def _on_touchpad(event):
     high = (delta >> 16) & 0xFFFF
     dx = high if high < 0x8000 else high - 0x10000
 
-    target = get_scroll_target()
-    if dy != 0 and hasattr(target, "yview_scroll"):
-        target.yview_scroll(-dy, "units")
-    if dx != 0 and hasattr(target, "xview_scroll") and target == getattr(preview_pane, "canvas", None):
-        target.xview_scroll(-dx, "units")
+    px, py = root.winfo_pointerxy()
+
+    # Route to preview pane if cursor is over it
+    if preview_pane and preview_pane.winfo_ismapped():
+        try:
+            rx = preview_pane.winfo_rootx()
+            ry = preview_pane.winfo_rooty()
+            rw = preview_pane.winfo_width()
+            rh = preview_pane.winfo_height()
+            if rx <= px <= rx + rw and ry <= py <= ry + rh:
+                if dy != 0 and hasattr(preview_pane.canvas, "yview_scroll"):
+                    preview_pane.canvas.yview_scroll(-dy, "units")
+                if dx != 0 and hasattr(preview_pane.canvas, "xview_scroll"):
+                    preview_pane.canvas.xview_scroll(-dx, "units")
+                return "break"
+        except Exception:
+            pass
+
+    # Check if cursor is over a Text or Entry widget
+    try:
+        w = root.winfo_containing(px, py)
+    except Exception:
+        w = None
+
+    if w:
+        w_class = getattr(w, "winfo_class", lambda: "")()
+        if isinstance(w, tk.Text) or w_class == "Text":
+            try:
+                top, bottom = w.yview()
+                can_scroll_down = (bottom < 0.999)
+                can_scroll_up = (top > 0.001)
+                if (dy > 0 and can_scroll_up) or (dy < 0 and can_scroll_down):
+                    try:
+                        w.yview_scroll(-dy, "pixels")
+                    except Exception:
+                        step = -int(dy / 8) if abs(dy) >= 8 else (-1 if dy > 0 else 1)
+                        w.yview_scroll(step, "units")
+                    return "break"
+                elif top > 0.001 or bottom < 0.999:
+                    return "break"
+            except Exception:
+                pass
+        elif isinstance(w, tk.Entry) or w_class == "Entry":
+            try:
+                left, right = w.xview()
+                can_scroll_right = (right < 0.999)
+                can_scroll_left = (left > 0.001)
+                if dx != 0:
+                    if (dx > 0 and can_scroll_left) or (dx < 0 and can_scroll_right):
+                        step = -int(dx) if abs(dx) >= 1 else (-1 if dx > 0 else 1)
+                        w.xview_scroll(step, "units")
+                        return "break"
+                elif (getattr(event, "state", 0) & 1) or w == root.focus_get():
+                    if dy != 0 and (left > 0.001 or right < 0.999):
+                        step = -int(dy / 8) if abs(dy) >= 8 else (-1 if dy > 0 else 1)
+                        w.xview_scroll(step, "units")
+                        return "break"
+            except Exception:
+                pass
+
+    if dy != 0 and hasattr(canvas, "yview_scroll"):
+        canvas.yview_scroll(-dy, "units")
     return "break"
 
 # 2. Traditional Mouse Wheel Scrolling (<MouseWheel>)
 def _on_mousewheel(event):
-    target = get_scroll_target()
     if sys.platform == "darwin":
         delta = event.delta
         if abs(delta) >= 120:
@@ -297,17 +353,69 @@ def _on_mousewheel(event):
             units = -int(delta * 4)
         if units == 0 and delta != 0:
             units = -4 if delta > 0 else 4
-        if hasattr(target, "yview_scroll"):
-            target.yview_scroll(units, "units")
     elif event.num == 5 or event.delta < 0:
-        if hasattr(target, "yview_scroll"):
-            target.yview_scroll(25, "units")
+        units = 25
     elif event.num == 4 or event.delta > 0:
-        if hasattr(target, "yview_scroll"):
-            target.yview_scroll(-25, "units")
+        units = -25
+    else:
+        units = 0
+
+    px, py = root.winfo_pointerxy()
+
+    # Route to preview pane if cursor is over it
+    if preview_pane and preview_pane.winfo_ismapped():
+        try:
+            rx = preview_pane.winfo_rootx()
+            ry = preview_pane.winfo_rooty()
+            rw = preview_pane.winfo_width()
+            rh = preview_pane.winfo_height()
+            if rx <= px <= rx + rw and ry <= py <= ry + rh:
+                if units != 0 and hasattr(preview_pane.canvas, "yview_scroll"):
+                    preview_pane.canvas.yview_scroll(units, "units")
+                return "break"
+        except Exception:
+            pass
+
+    # Check if cursor is over a Text or Entry widget
+    try:
+        w = root.winfo_containing(px, py)
+    except Exception:
+        w = None
+
+    if w:
+        w_class = getattr(w, "winfo_class", lambda: "")()
+        if isinstance(w, tk.Text) or w_class == "Text":
+            try:
+                top, bottom = w.yview()
+                can_scroll_down = (bottom < 0.999)
+                can_scroll_up = (top > 0.001)
+                if (units > 0 and can_scroll_down) or (units < 0 and can_scroll_up):
+                    try:
+                        w.yview_scroll(units * 12, "pixels")
+                    except Exception:
+                        step = int(units / 5) if abs(units) >= 5 else (1 if units > 0 else -1)
+                        w.yview_scroll(step, "units")
+                    return "break"
+                elif top > 0.001 or bottom < 0.999:
+                    return "break"
+            except Exception:
+                pass
+        elif isinstance(w, tk.Entry) or w_class == "Entry":
+            try:
+                left, right = w.xview()
+                if (getattr(event, "state", 0) & 1) or w == root.focus_get():
+                    if left > 0.001 or right < 0.999:
+                        step = int(units / 5) if abs(units) >= 5 else (1 if units > 0 else -1)
+                        w.xview_scroll(step, "units")
+                        return "break"
+            except Exception:
+                pass
+
+    if units != 0 and hasattr(canvas, "yview_scroll"):
+        canvas.yview_scroll(units, "units")
     return "break"
 
-# Bind across ALL widget classes so trackpad gestures scroll the page even when hovering over text boxes/entries
+# Bind across ALL widget classes so trackpad and mousewheel gestures route smoothly
 for widget_class in ("Text", "Entry", "Label", "Button", "Checkbutton", "Frame", "LabelFrame", "Canvas"):
     try:
         root.bind_class(widget_class, "<TouchpadScroll>", _on_touchpad)
@@ -324,6 +432,162 @@ except tk.TclError:
 root.bind_all("<MouseWheel>", _on_mousewheel)
 root.bind_all("<Button-4>", _on_mousewheel)
 root.bind_all("<Button-5>", _on_mousewheel)
+
+
+class TextBoxAutoScroller:
+    """Manages smooth continuous auto-scrolling when clicking and dragging to highlight past textbox boundaries."""
+    def __init__(self, root_window):
+        self.root = root_window
+        self.active_widget = None
+        self.timer = None
+        self.cur_x = 0
+        self.cur_y = 0
+        self.anchor = None
+
+        self.root.bind_class("Entry", "<ButtonPress-1>", self._on_entry_press, add="+")
+        self.root.bind_class("Entry", "<B1-Motion>", self._on_entry_motion, add="+")
+        self.root.bind_class("Entry", "<ButtonRelease-1>", self._on_release, add="+")
+
+        self.root.bind_class("Text", "<ButtonPress-1>", self._on_text_press, add="+")
+        self.root.bind_class("Text", "<B1-Motion>", self._on_text_motion, add="+")
+        self.root.bind_class("Text", "<ButtonRelease-1>", self._on_release, add="+")
+
+        self.root.bind_all("<ButtonRelease-1>", self._on_release, add="+")
+
+    def _on_entry_press(self, event):
+        self._cancel_timer()
+        w = event.widget
+        self.active_widget = w
+        self.cur_x = event.x
+        self.cur_y = event.y
+        try:
+            self.anchor = w.index("anchor")
+        except Exception:
+            try:
+                self.anchor = w.index(f"@{event.x}")
+            except Exception:
+                self.anchor = 0
+
+    def _on_entry_motion(self, event):
+        w = event.widget
+        self.active_widget = w
+        self.cur_x = event.x
+        self.cur_y = event.y
+        width = w.winfo_width()
+        if event.x > width or event.x < 0:
+            if not self.timer:
+                self._entry_tick()
+        else:
+            self._cancel_timer()
+
+    def _entry_tick(self):
+        self.timer = None
+        w = self.active_widget
+        if not w or not w.winfo_exists():
+            return
+
+        width = w.winfo_width()
+        x = self.cur_x
+        if x > width:
+            dist = x - width
+            step = max(1, min(8, dist // 15 + 1))
+            w.xview_scroll(step, "units")
+            cur = w.index(f"@{width}")
+            w.icursor(cur)
+            anchor = self.anchor if self.anchor is not None else w.index("anchor")
+            w.selection_range(min(anchor, cur), max(anchor, cur))
+            self.timer = self.root.after(35, self._entry_tick)
+        elif x < 0:
+            dist = -x
+            step = max(1, min(8, dist // 15 + 1))
+            w.xview_scroll(-step, "units")
+            cur = w.index("@0")
+            w.icursor(cur)
+            anchor = self.anchor if self.anchor is not None else w.index("anchor")
+            w.selection_range(min(anchor, cur), max(anchor, cur))
+            self.timer = self.root.after(35, self._entry_tick)
+
+    def _on_text_press(self, event):
+        self._cancel_timer()
+        w = event.widget
+        self.active_widget = w
+        self.cur_x = event.x
+        self.cur_y = event.y
+        try:
+            idx = w.index(f"@{event.x},{event.y}")
+            w.mark_set("custom_sel_anchor", idx)
+            self.anchor = idx
+        except Exception:
+            self.anchor = "1.0"
+
+    def _on_text_motion(self, event):
+        w = event.widget
+        self.active_widget = w
+        self.cur_x = event.x
+        self.cur_y = event.y
+        width = w.winfo_width()
+        height = w.winfo_height()
+        if event.y > height or event.y < 0 or event.x > width or event.x < 0:
+            if not self.timer:
+                self._text_tick()
+        else:
+            self._cancel_timer()
+
+    def _text_tick(self):
+        self.timer = None
+        w = self.active_widget
+        if not w or not w.winfo_exists():
+            return
+
+        width = w.winfo_width()
+        height = w.winfo_height()
+        x = self.cur_x
+        y = self.cur_y
+
+        if y > height:
+            dist = y - height
+            step = max(1, min(4, dist // 25 + 1))
+            w.yview_scroll(step, "units")
+        elif y < 0:
+            dist = -y
+            step = max(1, min(4, dist // 25 + 1))
+            w.yview_scroll(-step, "units")
+
+        if x > width:
+            w.xview_scroll(2, "units")
+        elif x < 0:
+            w.xview_scroll(-2, "units")
+
+        clamp_x = max(0, min(x, width))
+        clamp_y = max(0, min(y, height))
+        try:
+            cur = w.index(f"@{clamp_x},{clamp_y}")
+            w.mark_set("insert", cur)
+            anchor = w.index("custom_sel_anchor") if "custom_sel_anchor" in w.mark_names() else (self.anchor or "1.0")
+            w.tag_remove("sel", "1.0", "end")
+            if w.compare(anchor, "<", cur):
+                w.tag_add("sel", anchor, cur)
+            else:
+                w.tag_add("sel", cur, anchor)
+        except Exception:
+            pass
+
+        if y > height or y < 0 or x > width or x < 0:
+            self.timer = self.root.after(35, self._text_tick)
+
+    def _on_release(self, event=None):
+        self._cancel_timer()
+        self.active_widget = None
+
+    def _cancel_timer(self):
+        if self.timer:
+            try:
+                self.root.after_cancel(self.timer)
+            except Exception:
+                pass
+            self.timer = None
+
+textbox_autoscroller = TextBoxAutoScroller(root)
 
 # Keyboard navigation (PageUp, PageDown, Home, End, Up, Down)
 def _on_key_scroll(event):
