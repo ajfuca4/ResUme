@@ -80,11 +80,11 @@ def load_data():
                 "enabled": True,
                 "entries": [
                     {
+                        "type": "single-line",
                         "enabled": True,
-                        "field1": "Gitlytics",
-                        "field2": "June 2020 -- Present",
-                        "field3": "Python, Flask, React, PostgreSQL, Docker",
-                        "field4": "",
+                        "title": "Gitlytics",
+                        "subtitle": "Python, Flask, React, PostgreSQL, Docker",
+                        "date": "June 2020 -- Present",
                         "bullets": [
                             {"enabled": True, "text": "Developed a full-stack web application using with Flask serving a REST API with React as the frontend"},
                             {"enabled": True, "text": "Implemented GitHub OAuth to get data from user’s repositories"},
@@ -93,11 +93,11 @@ def load_data():
                         ]
                     },
                     {
+                        "type": "single-line",
                         "enabled": True,
-                        "field1": "Simple Paintball",
-                        "field2": "May 2018 -- May 2020",
-                        "field3": "Spigot API, Java, Maven, TravisCI, Git",
-                        "field4": "",
+                        "title": "Simple Paintball",
+                        "subtitle": "Spigot API, Java, Maven, TravisCI, Git",
+                        "date": "May 2018 -- May 2020",
                         "bullets": [
                             {"enabled": True, "text": "Developed a Minecraft server plugin to entertain kids during free time for a previous job"},
                             {"enabled": True, "text": "Published plugin to websites gaining 2K+ downloads and an average 4.5/5-star review"},
@@ -379,10 +379,7 @@ def extract_sections_from_ui():
         entries_list = []
         for it in s["entries"]:
             it_enabled = it["var"].get()
-            f1 = it["e1"].get().strip()
-            f2 = it["e2"].get().strip()
-            f3 = it["e3"].get().strip()
-            f4 = it["e4"].get().strip()
+            it_type = it.get("type", "dual-line")
 
             bullets_list = []
             for b in it["bullets"]:
@@ -391,15 +388,34 @@ def extract_sections_from_ui():
                 if b_text:
                     bullets_list.append({"enabled": b_enabled, "text": b_text})
 
-            if f1 or f2 or f3 or f4 or bullets_list:
-                entries_list.append({
-                    "enabled": it_enabled,
-                    "field1": f1,
-                    "field2": f2,
-                    "field3": f3,
-                    "field4": f4,
-                    "bullets": bullets_list
-                })
+            if it_type == "single-line":
+                title_val = it["e_title"].get().strip()
+                subtitle_val = it["e_subtitle"].get().strip()
+                date_val = it["e_date"].get().strip()
+                if title_val or subtitle_val or date_val or bullets_list:
+                    entries_list.append({
+                        "type": "single-line",
+                        "enabled": it_enabled,
+                        "title": title_val,
+                        "subtitle": subtitle_val,
+                        "date": date_val,
+                        "bullets": bullets_list
+                    })
+            else:
+                f1 = it["e1"].get().strip()
+                f2 = it["e2"].get().strip()
+                f3 = it["e3"].get().strip()
+                f4 = it["e4"].get().strip()
+                if f1 or f2 or f3 or f4 or bullets_list:
+                    entries_list.append({
+                        "type": "dual-line",
+                        "enabled": it_enabled,
+                        "field1": f1,
+                        "field2": f2,
+                        "field3": f3,
+                        "field4": f4,
+                        "bullets": bullets_list
+                    })
 
         simple_lines_list = []
         for l in s["simple_lines"]:
@@ -690,9 +706,9 @@ def remove_item(sec_data, item_data):
         save_master_yaml(show_popup=False)
     update_scroll()
 
-def add_item_widget(sec_data, parent_container, item_dict=None):
+def add_dual_line_item_widget(sec_data, parent_container, item_dict=None):
     if item_dict is None:
-        item_dict = {"enabled": True, "field1": "", "field2": "", "field3": "", "field4": "", "bullets": []}
+        item_dict = {"type": "dual-line", "enabled": True, "field1": "", "field2": "", "field3": "", "field4": "", "bullets": []}
 
     is_included = item_dict.get("enabled", True)
 
@@ -703,7 +719,7 @@ def add_item_widget(sec_data, parent_container, item_dict=None):
     body = card.inner
 
     var = tk.BooleanVar(value=is_included)
-    item_data = {"var": var, "frame": card, "bullets": []}
+    item_data = {"type": "dual-line", "var": var, "frame": card, "bullets": []}
 
     fields = tk.Frame(body, bg=BG_ITEM)
     fields.pack(fill="x")
@@ -716,23 +732,23 @@ def add_item_widget(sec_data, parent_container, item_dict=None):
     lbl_title = make_label(fields, "Title", BG_ITEM)
     lbl_title.grid(row=0, column=1, sticky="w", padx=(0, 8))
     e1 = make_entry(fields, font=F_BODY_B, fg=FG if is_included else FG_DIM)
-    e1.insert(0, item_dict.get("field1", ""))
+    e1.insert(0, item_dict.get("field1") if "field1" in item_dict else item_dict.get("title", ""))
     e1.grid(row=0, column=2, sticky="ew", pady=3)
 
     # Dates widgets
     lbl_dates = make_label(fields, "Dates", BG_ITEM)
     e2 = make_entry(fields, width=20, fg=FG)
-    e2.insert(0, item_dict.get("field2", ""))
+    e2.insert(0, item_dict.get("field2") if "field2" in item_dict else item_dict.get("dates", item_dict.get("date", "")))
 
     # Subtitle widgets
     lbl_subtitle = make_label(fields, "Subtitle", BG_ITEM)
     e3 = make_entry(fields, font=F_BODY_I, fg=FG if is_included else FG_DIM)
-    e3.insert(0, item_dict.get("field3", ""))
+    e3.insert(0, item_dict.get("field3") if "field3" in item_dict else item_dict.get("subtitle", ""))
 
     # Location widgets
     lbl_location = make_label(fields, "Location", BG_ITEM)
     e4 = make_entry(fields, width=20, fg=FG)
-    e4.insert(0, item_dict.get("field4", ""))
+    e4.insert(0, item_dict.get("field4") if "field4" in item_dict else item_dict.get("location", ""))
 
     status_lbl = tk.Label(fields, text="" if is_included else "EXCLUDED", font=F_TAG, bg=BG_ITEM, fg=FG_DIM)
     status_lbl.grid(row=0, column=5, padx=8, sticky="w")
@@ -759,7 +775,7 @@ def add_item_widget(sec_data, parent_container, item_dict=None):
 
     PillButton(
         bullets_section, "+ Add Bullet",
-        lambda: add_bullet_widget(item_data, bullets_container, True, ""),
+        lambda: (add_bullet_widget(item_data, bullets_container, True, ""), _autosave()),
         parent_bg=BG_ITEM, fg=FG_MUTED, font=F_BTN, padx=10, pady=4,
     ).pack(anchor="w", padx=(22, 0), pady=(6, 0))
 
@@ -809,6 +825,137 @@ def add_item_widget(sec_data, parent_container, item_dict=None):
 
     sec_data["entries"].append(item_data)
     update_scroll()
+    return item_data
+
+
+def add_single_line_item_widget(sec_data, parent_container, item_dict=None):
+    if item_dict is None:
+        item_dict = {"type": "single-line", "enabled": True, "title": "", "subtitle": "", "date": "", "bullets": []}
+
+    is_included = item_dict.get("enabled", True)
+
+    card = RoundedCard(parent_container, bg=BG_ITEM, parent_bg=BG_SECTION,
+                       border=BORDER_ITEM, radius=12, padx=14,
+                       pady=12 if is_included else 8)
+    card.pack(fill="x", pady=5)
+    body = card.inner
+
+    var = tk.BooleanVar(value=is_included)
+    item_data = {"type": "single-line", "var": var, "frame": card, "bullets": []}
+
+    fields = tk.Frame(body, bg=BG_ITEM)
+    fields.pack(fill="x")
+    fields.columnconfigure(2, weight=2)
+    fields.columnconfigure(4, weight=3)
+    fields.columnconfigure(6, weight=0 if is_included else 1)
+
+    # Toggle & Title always on Row 0
+    Toggle(fields, var, BG_ITEM, command=lambda: update_single_collapse_ui()).grid(row=0, column=0, padx=(0, 10), sticky="w")
+
+    lbl_title = make_label(fields, "Title", BG_ITEM)
+    lbl_title.grid(row=0, column=1, sticky="w", padx=(0, 8))
+    e_title = make_entry(fields, font=F_BODY_B, fg=FG if is_included else FG_DIM)
+    e_title.insert(0, item_dict.get("title") if "title" in item_dict else item_dict.get("field1", ""))
+    e_title.grid(row=0, column=2, sticky="ew", pady=3)
+
+    # Subtitle widgets
+    lbl_subtitle = make_label(fields, "Subtitle", BG_ITEM)
+    lbl_subtitle.grid(row=0, column=3, sticky="w", padx=(14, 8))
+    e_subtitle = make_entry(fields, font=F_BODY_I, fg=FG if is_included else FG_DIM)
+    e_subtitle.insert(0, item_dict.get("subtitle") if "subtitle" in item_dict else item_dict.get("field3", ""))
+    e_subtitle.grid(row=0, column=4, sticky="ew", pady=3)
+
+    # Date widgets
+    lbl_date = make_label(fields, "Date", BG_ITEM)
+    e_date = make_entry(fields, width=20, fg=FG)
+    e_date.insert(0, item_dict.get("date") if "date" in item_dict else item_dict.get("field2", ""))
+
+    status_lbl = tk.Label(fields, text="" if is_included else "EXCLUDED", font=F_TAG, bg=BG_ITEM, fg=FG_DIM)
+    status_lbl.grid(row=0, column=7, padx=8, sticky="w")
+
+    _icon_controls(
+        fields, BG_ITEM,
+        lambda: move_item_up(sec_data, item_data),
+        lambda: move_item_down(sec_data, item_data),
+        lambda: remove_item(sec_data, item_data),
+    ).grid(row=0, column=8, padx=(10, 0), sticky="e")
+
+    item_data.update({
+        "e_title": e_title,
+        "e_subtitle": e_subtitle,
+        "e_date": e_date,
+        "e1": e_title,
+        "e2": e_date,
+        "e3": e_subtitle,
+        "e4": None,
+    })
+
+    # Bullets section container (bullets list + add button)
+    bullets_section = tk.Frame(body, bg=BG_ITEM)
+
+    bullets_container = tk.Frame(bullets_section, bg=BG_ITEM)
+    bullets_container.pack(fill="x", padx=(28, 0), pady=(8, 0))
+
+    for b in item_dict.get("bullets", []):
+        b_en = b.get("enabled", True) if isinstance(b, dict) else True
+        b_txt = b.get("text", "") if isinstance(b, dict) else str(b)
+        add_bullet_widget(item_data, bullets_container, b_en, b_txt)
+
+    PillButton(
+        bullets_section, "+ Add Bullet",
+        lambda: (add_bullet_widget(item_data, bullets_container, True, ""), _autosave()),
+        parent_bg=BG_ITEM, fg=FG_MUTED, font=F_BTN, padx=10, pady=4,
+    ).pack(anchor="w", padx=(22, 0), pady=(6, 0))
+
+    if is_included:
+        lbl_date.grid(row=0, column=5, sticky="w", padx=(14, 8))
+        e_date.grid(row=0, column=6, sticky="ew", pady=3)
+        bullets_section.pack(fill="x")
+
+    def update_single_collapse_ui():
+        if var.get():
+            fields.columnconfigure(6, weight=0)
+            lbl_date.grid(row=0, column=5, sticky="w", padx=(14, 8))
+            e_date.grid(row=0, column=6, sticky="ew", pady=3)
+            bullets_section.pack(fill="x")
+            card.set_padding(pady=12)
+            status_lbl.configure(text="")
+            e_title.configure(fg=FG)
+            e_subtitle.configure(fg=FG)
+            e_date.configure(fg=FG)
+        else:
+            fields.columnconfigure(6, weight=1)
+            lbl_date.grid_remove()
+            e_date.grid_remove()
+            bullets_section.pack_forget()
+            card.set_padding(pady=8)
+            status_lbl.configure(text="EXCLUDED")
+            e_title.configure(fg=FG_DIM)
+            e_subtitle.configure(fg=FG_DIM)
+        _autosave()
+        update_scroll()
+
+    sec_data["entries"].append(item_data)
+    update_scroll()
+    return item_data
+
+
+def add_item_widget(sec_data, parent_container, item_dict=None, item_type=None):
+    if item_dict is not None:
+        t = str(item_dict.get("type") or item_type or "").lower()
+        if t in ("single-line", "single", "single_line", "single-line subheader", "single-line subheaders"):
+            return add_single_line_item_widget(sec_data, parent_container, item_dict)
+        elif t in ("dual-line", "dual", "dual_line", "dual-line subheader", "dual-line subheaders"):
+            return add_dual_line_item_widget(sec_data, parent_container, item_dict)
+        elif ("title" in item_dict or "date" in item_dict) and "field4" not in item_dict and not item_dict.get("field4"):
+            return add_single_line_item_widget(sec_data, parent_container, item_dict)
+        else:
+            return add_dual_line_item_widget(sec_data, parent_container, item_dict)
+    else:
+        if str(item_type or "").lower() in ("single-line", "single", "single_line"):
+            return add_single_line_item_widget(sec_data, parent_container)
+        else:
+            return add_dual_line_item_widget(sec_data, parent_container)
 
 # Simple line management (Title + Content, e.g. Technical Skills)
 def remove_line(sec_data, line_data):
@@ -951,15 +1098,39 @@ def add_section_widget(sec_dict=None):
     sec_actions = tk.Frame(body_frame, bg=BG_SECTION)
     sec_actions.pack(fill="x", pady=(8, 0))
 
+    def _add_dual():
+        add_dual_line_item_widget(sec_data, entries_container)
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
+        update_scroll()
+
+    def _add_single():
+        add_single_line_item_widget(sec_data, entries_container)
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
+        update_scroll()
+
+    def _add_line():
+        add_line_widget(sec_data, lines_container)
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
+        update_scroll()
+
     PillButton(
-        sec_actions, "+ Subheader Item",
-        lambda: add_item_widget(sec_data, entries_container),
+        sec_actions, "+ Dual-line Subheader",
+        _add_dual,
+        parent_bg=BG_SECTION, bg=BG_ITEM, fg=FG_MUTED, border=BORDER_ITEM, padx=12, pady=5,
+    ).pack(side="left", padx=(0, 8))
+
+    PillButton(
+        sec_actions, "+ Single-line Subheader",
+        _add_single,
         parent_bg=BG_SECTION, bg=BG_ITEM, fg=FG_MUTED, border=BORDER_ITEM, padx=12, pady=5,
     ).pack(side="left", padx=(0, 8))
 
     PillButton(
         sec_actions, "+ Single Line",
-        lambda: add_line_widget(sec_data, lines_container),
+        _add_line,
         parent_bg=BG_SECTION, bg=BG_ITEM, fg=FG_MUTED, border=BORDER_ITEM, padx=12, pady=5,
     ).pack(side="left")
 
@@ -1393,6 +1564,17 @@ def render_latex_source():
             c_bullets = [b["text"] for b in item["bullets"] if b["enabled"]]
             c_item = item.copy()
             c_item["bullets"] = c_bullets
+            if c_item.get("type") in ("single-line", "single"):
+                c_item["type"] = "single-line"
+                c_item["title"] = item.get("title", item.get("field1", ""))
+                c_item["subtitle"] = item.get("subtitle", item.get("field3", ""))
+                c_item["date"] = item.get("date", item.get("field2", ""))
+            else:
+                c_item["type"] = "dual-line"
+                c_item["field1"] = item.get("field1", item.get("title", ""))
+                c_item["field2"] = item.get("field2", item.get("date", item.get("dates", "")))
+                c_item["field3"] = item.get("field3", item.get("subtitle", ""))
+                c_item["field4"] = item.get("field4", item.get("location", ""))
             c_entries.append(c_item)
 
         c_lines = [l for l in sec["simple_lines"] if l["enabled"]]

@@ -5,7 +5,7 @@
 % License : MIT
 %------------------------
 
-\documentclass[letterpaper,11pt]{article}
+\documentclass[letterpaper,6pt]{article}
 
 \usepackage{latexsym}
 \usepackage[empty]{fullpage}
@@ -129,13 +129,13 @@
   \resumeSubHeadingListStart
     \BLOCK{ for item in sec.entries }
     \BLOCK{ if item.enabled }
-      \BLOCK{ if item.field3 or item.field4 }
+      \BLOCK{ if item.type == 'single-line' or item.type == 'single' or (not item.type and not item.field3 and not item.field4 and (item.title or item.subtitle)) }
+      \resumeProjectHeading
+        {\BLOCK{ if item.title }\textbf{\VAR{item.title}}\BLOCK{ endif }\BLOCK{ if item.title and item.subtitle } $|$ \BLOCK{ endif }\BLOCK{ if item.subtitle }\emph{\VAR{item.subtitle}}\BLOCK{ endif }}{\VAR{item.date}}
+      \BLOCK{ else }
       \resumeSubheading
         {\VAR{item.field1}}{\VAR{item.field2}}
         {\VAR{item.field3}}{\VAR{item.field4}}
-      \BLOCK{ else }
-      \resumeProjectHeading
-        {\textbf{\VAR{item.field1}}}{\VAR{item.field2}}
       \BLOCK{ endif }
       \BLOCK{ if item.bullets }
       \resumeItemListStart
