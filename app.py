@@ -724,7 +724,7 @@ def extract_sections_from_ui():
             lbl = l["label_entry"].get().strip()
             if "flow" in l:
                 items = l["flow"].get_items()
-                txt = ", ".join(items)
+                txt = l["flow"].get_enabled_text()
             else:
                 txt = l.get("text_entry", tk.Entry(root)).get().strip()
                 items = [p.strip() for p in txt.split(",") if p.strip()]
@@ -1354,7 +1354,10 @@ class SingleLineFlow(tk.Frame):
             items = [""]
 
         for text in items:
-            self._create_item_widget(text)
+            if isinstance(text, dict):
+                self._create_item_widget(text.get("text", ""), enabled=text.get("enabled", True))
+            else:
+                self._create_item_widget(str(text), enabled=True)
 
         self.add_btn = tk.Frame(self, bg=BG_INPUT, highlightthickness=1, highlightbackground=BORDER_INPUT, cursor="hand2")
         lbl_plus = tk.Label(self.add_btn, text="+ Item", font=F_TAG, fg=FG_MUTED, bg=BG_INPUT, cursor="hand2", padx=7, pady=3)
@@ -1380,28 +1383,50 @@ class SingleLineFlow(tk.Frame):
         self._update_button_states()
         self.reflow()
 
-    def _create_item_widget(self, text):
+    def _create_item_widget(self, text, enabled=True):
         chip = tk.Frame(self, bg=BG_INPUT, highlightthickness=1, highlightbackground=BORDER_INPUT)
 
-        btn_l = tk.Label(chip, text="‹", font=("Helvetica", 11, "bold"), fg=FG_MUTED, bg=BG_INPUT, cursor="hand2", padx=4)
-        btn_l.pack(side="left")
+        var = tk.BooleanVar(value=enabled)
+
+        def _on_toggle():
+            if not var.get():
+                entry.configure(fg=FG_DIM)
+                if self.items_data and self.items_data[-1] is not item_obj:
+                    self.items_data.remove(item_obj)
+                    self.items_data.append(item_obj)
+                    self._update_button_states()
+                    self.reflow()
+            else:
+                entry.configure(fg=FG)
+                first_inactive_idx = next((idx for idx, it in enumerate(self.items_data) if not it["var"].get() and it is not item_obj), None)
+                cur_idx = self.items_data.index(item_obj)
+                if first_inactive_idx is not None and cur_idx > first_inactive_idx:
+                    self.items_data.remove(item_obj)
+                    self.items_data.insert(first_inactive_idx, item_obj)
+                    self._update_button_states()
+                    self.reflow()
+            if self.on_change:
+                self.on_change()
+
+        toggle = Toggle(chip, var, parent_bg=BG_INPUT, size=14, command=_on_toggle)
+        toggle.pack(side="left", padx=(5, 3))
 
         entry = tk.Entry(
-            chip, font=F_BODY, bg=BG_INPUT, fg=FG, insertbackground=FG,
+            chip, font=F_BODY, bg=BG_INPUT, fg=FG if enabled else FG_DIM, insertbackground=FG,
             relief="flat", bd=0, highlightthickness=0, width=max(3, len(text) + 1)
         )
         entry.insert(0, text)
-        entry.pack(side="left", padx=2, pady=3)
+        entry.pack(side="left", padx=(0, 2), pady=3)
 
-        btn_r = tk.Label(chip, text="›", font=("Helvetica", 11, "bold"), fg=FG_MUTED, bg=BG_INPUT, cursor="hand2", padx=4)
-        btn_r.pack(side="left")
+        btn_l = tk.Label(chip, text="◀", font=(UI_FONT, 7), fg=FG_MUTED, bg=BG_INPUT, cursor="hand2", padx=1)
+        btn_l.pack(side="left", padx=1)
 
-        btn_x = tk.Label(chip, text="×", font=("Helvetica", 12, "bold"), fg=FG_DIM, bg=BG_INPUT, cursor="hand2", padx=4)
-        btn_x.pack(side="left")
+        btn_r = tk.Label(chip, text="▶", font=(UI_FONT, 7), fg=FG_MUTED, bg=BG_INPUT, cursor="hand2", padx=1)
+        btn_r.pack(side="left", padx=(1, 5))
 
         comma = tk.Label(self, text=",", font=F_BODY_B, fg=FG_MUTED, bg=BG_ITEM)
 
-        item_obj = {"chip": chip, "entry": entry, "comma": comma, "btn_l": btn_l, "btn_r": btn_r, "btn_x": btn_x}
+        item_obj = {"chip": chip, "var": var, "toggle": toggle, "entry": entry, "comma": comma, "btn_l": btn_l, "btn_r": btn_r}
 
         entry.bind("<FocusIn>", lambda e: chip.configure(highlightbackground=FOCUS_RING))
         entry.bind("<FocusOut>", lambda e: chip.configure(highlightbackground=BORDER_INPUT))
@@ -1451,14 +1476,11 @@ class SingleLineFlow(tk.Frame):
 
         btn_l.bind("<Button-1>", _move_left)
         btn_r.bind("<Button-1>", _move_right)
-        btn_x.bind("<Button-1>", _delete)
 
         btn_l.bind("<Enter>", lambda e: btn_l.configure(fg=FG) if self.items_data.index(item_obj) > 0 else None)
         btn_l.bind("<Leave>", lambda e: btn_l.configure(fg=FG_MUTED if self.items_data.index(item_obj) > 0 else BORDER_INPUT))
         btn_r.bind("<Enter>", lambda e: btn_r.configure(fg=FG) if self.items_data.index(item_obj) < len(self.items_data) - 1 else None)
         btn_r.bind("<Leave>", lambda e: btn_r.configure(fg=FG_MUTED if self.items_data.index(item_obj) < len(self.items_data) - 1 else BORDER_INPUT))
-        btn_x.bind("<Enter>", lambda e: btn_x.configure(fg=DANGER))
-        btn_x.bind("<Leave>", lambda e: btn_x.configure(fg=FG_DIM))
 
         def _on_key_release(e):
             val = entry.get()
@@ -1539,15 +1561,15 @@ class SingleLineFlow(tk.Frame):
                 cursor="hand2" if can_right else ""
             )
 
-    def add_item(self, text=""):
-        obj = self._create_item_widget(text)
+    def add_item(self, text="", enabled=True):
+        obj = self._create_item_widget(text, enabled=enabled)
         self.reflow()
         obj["entry"].focus_set()
         if self.on_change:
             self.on_change()
 
-    def insert_item(self, index, text=""):
-        obj = self._create_item_widget(text)
+    def insert_item(self, index, text="", enabled=True):
+        obj = self._create_item_widget(text, enabled=enabled)
         self.items_data.remove(obj)
         self.items_data.insert(index, obj)
         self._update_button_states()
@@ -1557,7 +1579,18 @@ class SingleLineFlow(tk.Frame):
             self.on_change()
 
     def get_items(self):
-        return [it["entry"].get().strip() for it in self.items_data if it["entry"].get().strip()]
+        return [
+            {"enabled": it["var"].get(), "text": it["entry"].get().strip()}
+            for it in self.items_data
+            if it["entry"].get().strip()
+        ]
+
+    def get_enabled_text(self):
+        return ", ".join(
+            it["entry"].get().strip()
+            for it in self.items_data
+            if it["entry"].get().strip() and it["var"].get()
+        )
 
     def reflow(self, event=None):
         self.update_idletasks()

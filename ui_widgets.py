@@ -156,8 +156,9 @@ class Toggle(tk.Canvas):
 
     SIZE = 18
 
-    def __init__(self, parent, variable, parent_bg, command=None):
-        super().__init__(parent, width=self.SIZE, height=self.SIZE, bg=parent_bg,
+    def __init__(self, parent, variable, parent_bg, command=None, size=None):
+        self.size = size or self.SIZE
+        super().__init__(parent, width=self.size, height=self.size, bg=parent_bg,
                          highlightthickness=0, bd=0, cursor="hand2")
         self.var = variable
         self.command = command
@@ -166,11 +167,13 @@ class Toggle(tk.Canvas):
 
     def _draw(self):
         self.delete("all")
-        s = self.SIZE
-        pts = rounded_points(1, 1, s - 2, s - 2, 5)
+        s = self.size
+        r = max(2, int(s * 0.28))
+        pts = rounded_points(1, 1, s - 2, s - 2, r)
         if self.var.get():
             self.create_polygon(pts, smooth=True, fill=FG, outline=FG)
-            self.create_line(5, 9.5, 8, 12.5, 13, 6, fill=BG_APP, width=2,
+            self.create_line(s * 0.25, s * 0.52, s * 0.44, s * 0.72, s * 0.75, s * 0.3,
+                             fill=BG_APP, width=max(1.5, s * 0.11),
                              capstyle="round", joinstyle="round")
         else:
             self.create_polygon(pts, smooth=True, fill="", outline=FG_DIM, width=1.5)
