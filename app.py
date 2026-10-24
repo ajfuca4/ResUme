@@ -10,7 +10,7 @@ if os.path.exists(_venv_python) and os.path.realpath(sys.executable) != os.path.
         os.execv(_venv_python, [_venv_python] + sys.argv)
 
 import tkinter as tk
-from tkinter import messagebox, ttk, filedialog
+from tkinter import messagebox, ttk, filedialog, font as tkfont
 import yaml
 import shutil
 import subprocess
@@ -174,6 +174,34 @@ _style.configure(
     lightcolor=BG_ITEM, darkcolor=BG_ITEM, gripcount=0, relief="flat", width=10,
 )
 _style.map("Dark.Vertical.TScrollbar", background=[("active", BORDER_INPUT), ("pressed", BORDER_INPUT)])
+
+root.option_add("*TCombobox*Listbox.background", BG_ITEM)
+root.option_add("*TCombobox*Listbox.foreground", FG)
+root.option_add("*TCombobox*Listbox.selectBackground", SELECT_BG)
+root.option_add("*TCombobox*Listbox.selectForeground", FG)
+root.option_add("*TCombobox*Listbox.relief", "flat")
+root.option_add("*TCombobox*Listbox.font", F_BODY)
+
+_style.configure(
+    "Dark.TCombobox",
+    fieldbackground=BG_INPUT,
+    background=BG_ITEM,
+    foreground=FG,
+    arrowcolor=FG,
+    bordercolor=BORDER_INPUT,
+    lightcolor=BORDER_INPUT,
+    darkcolor=BORDER_INPUT,
+    relief="flat",
+    padding=(8, 5)
+)
+_style.map(
+    "Dark.TCombobox",
+    fieldbackground=[("readonly", BG_INPUT), ("active", BG_INPUT)],
+    foreground=[("readonly", FG), ("active", FG)],
+    selectbackground=[("readonly", BG_INPUT)],
+    selectforeground=[("readonly", FG)],
+    bordercolor=[("focus", FOCUS_RING)]
+)
 
 # Header Section
 header_frame = tk.Frame(root, bg=BG_APP, padx=28, pady=18)
@@ -715,6 +743,10 @@ def save_master_yaml(show_popup=False, recompile_preview=True):
     if header_widgets:
         master_data["name"] = header_widgets["name_entry"].get().strip()
         master_data["links"] = extract_links_from_ui()
+        if "font_combo" in header_widgets:
+            master_data["font_family"] = header_widgets["font_combo"].get()
+        if "size_combo" in header_widgets:
+            master_data["font_size"] = header_widgets["size_combo"].get()
 
     try:
         with open("master.yaml", "w", encoding="utf-8") as f:
@@ -821,6 +853,11 @@ def _on_any_key(event):
     w = event.widget
     try:
         if w and (isinstance(w, (tk.Entry, tk.Text)) or getattr(w, "winfo_class", lambda: "")() in ("Entry", "Text")):
+            if hasattr(w, "_update_height"):
+                try:
+                    w.after_idle(w._update_height)
+                except Exception:
+                    pass
             schedule_debounced_save(event)
     except Exception:
         pass
@@ -953,11 +990,49 @@ def add_bullet_widget(item_data, parent_container, enabled=True, text=""):
         lambda: remove_bullet(item_data, bullet_data),
     ).pack(side="right", anchor="n", padx=(8, 0), pady=5)
 
-    txt = make_text(row)
-    txt.insert("1.0", text)
-    txt.pack(side="left", fill="x", expand=True)
+    txt_box = tk.Frame(row, bg=BG_ITEM)
+    txt_box.pack(side="left", fill="x", expand=True)
+    txt_box.pack_propagate(False)
 
-    bullet_data = {"var": var, "text_widget": txt, "frame": row}
+    txt = make_text(txt_box, height=2)
+    txt.insert("1.0", text)
+    txt.pack(fill="both", expand=True)
+
+    # Dynamic line height calculation: expand by an additional 30% of the next line if > 2 lines
+    f = tkfont.Font(font=txt.cget("font"))
+    line_h = f.metrics("linespace")
+    pady = int(txt.cget("pady"))
+    ht = int(txt.cget("highlightthickness"))
+    h_2lines = 2 * line_h + 2 * pady + 2 * ht
+    h_expanded = h_2lines + max(1, int(round(0.3 * line_h + 0.1)))
+
+    txt_box.configure(height=h_2lines)
+
+    def _update_bullet_height(event=None):
+        try:
+            if not txt.winfo_exists() or not txt_box.winfo_exists():
+                return
+            if txt.winfo_width() <= 10:
+                return
+            res = txt.count("1.0", "end-1c", "displaylines")
+            display_lines = (res[0] + 1) if res else 1
+            target_h = h_expanded if display_lines > 2 else h_2lines
+            if txt_box.cget("height") != target_h:
+                txt_box.configure(height=target_h)
+                update_scroll()
+        except Exception:
+            pass
+
+    txt._update_height = _update_bullet_height
+    txt.bind("<KeyRelease>", _update_bullet_height, add="+")
+    txt.bind("<KeyPress>", lambda e: txt.after_idle(_update_bullet_height), add="+")
+    txt.bind("<Configure>", _update_bullet_height, add="+")
+    txt.bind("<ButtonRelease-1>", _update_bullet_height, add="+")
+    txt.bind("<<Paste>>", lambda e: txt.after_idle(_update_bullet_height), add="+")
+    row.after_idle(_update_bullet_height)
+    row.after(150, _update_bullet_height)
+
+    bullet_data = {"var": var, "text_widget": txt, "frame": row, "box": txt_box}
 
     item_data["bullets"].append(bullet_data)
     update_scroll()
@@ -1643,6 +1718,55 @@ def build_header_widget():
     tk.Label(top, text="Name and contact links shown at the top of the resume",
              font=F_LABEL, bg=BG_SECTION, fg=FG_DIM).pack(side="left", padx=10, pady=(4, 0))
 
+    # Typography controls (Font & Font Size) in top right corner of Header card
+    font_controls = tk.Frame(top, bg=BG_SECTION)
+    font_controls.pack(side="right")
+
+    make_label(font_controls, "Font", BG_SECTION).pack(side="left", padx=(0, 6))
+    cur_font = master_data.get("font_family") or "Default (Computer Modern)"
+    font_var = tk.StringVar(value=cur_font)
+    font_combo = ttk.Combobox(
+        font_controls,
+        textvariable=font_var,
+        values=[
+            "Default (Computer Modern)",
+            "Charter",
+            "Cormorant Garamond",
+            "Fira Sans",
+            "Roboto",
+            "Noto Sans",
+            "Source Sans Pro",
+        ],
+        state="readonly",
+        width=20,
+        style="Dark.TCombobox"
+    )
+    font_combo.var = font_var
+    font_combo.set(cur_font)
+    font_combo.pack(side="left", padx=(0, 12))
+
+    make_label(font_controls, "Size", BG_SECTION).pack(side="left", padx=(0, 6))
+    cur_size = master_data.get("font_size") or "10pt"
+    size_var = tk.StringVar(value=cur_size)
+    size_combo = ttk.Combobox(
+        font_controls,
+        textvariable=size_var,
+        values=["8pt", "9pt", "10pt", "11pt", "12pt", "14pt"],
+        state="readonly",
+        width=7,
+        style="Dark.TCombobox"
+    )
+    size_combo.var = size_var
+    size_combo.set(cur_size)
+    size_combo.pack(side="left")
+
+    def _on_typography_change(event=None):
+        if _is_ui_initialized:
+            save_master_yaml(show_popup=False)
+
+    font_combo.bind("<<ComboboxSelected>>", _on_typography_change)
+    size_combo.bind("<<ComboboxSelected>>", _on_typography_change)
+
     # Name
     name_card = RoundedCard(inner, bg=BG_ITEM, parent_bg=BG_SECTION,
                             border=BORDER_ITEM, radius=12, padx=14, pady=10)
@@ -1653,6 +1777,10 @@ def build_header_widget():
     name_entry.pack(side="left", fill="x", expand=True)
 
     header_widgets["name_entry"] = name_entry
+    header_widgets["font_combo"] = font_combo
+    header_widgets["font_var"] = font_var
+    header_widgets["size_combo"] = size_combo
+    header_widgets["size_var"] = size_var
     header_widgets["links"] = []
 
     # Links
