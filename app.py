@@ -185,9 +185,9 @@ root.option_add("*TCombobox*Listbox.font", F_BODY)
 _style.configure(
     "Dark.TCombobox",
     fieldbackground=BG_INPUT,
-    background=BG_ITEM,
+    background=BG_INPUT,
     foreground=FG,
-    arrowcolor=FG,
+    arrowcolor=FG_MUTED,
     bordercolor=BORDER_INPUT,
     lightcolor=BORDER_INPUT,
     darkcolor=BORDER_INPUT,
@@ -197,7 +197,9 @@ _style.configure(
 _style.map(
     "Dark.TCombobox",
     fieldbackground=[("readonly", BG_INPUT), ("active", BG_INPUT)],
+    background=[("pressed", BG_INPUT), ("active", BG_INPUT), ("readonly", BG_INPUT)],
     foreground=[("readonly", FG), ("active", FG)],
+    arrowcolor=[("pressed", FG), ("readonly", FG_MUTED)],
     selectbackground=[("readonly", BG_INPUT)],
     selectforeground=[("readonly", FG)],
     bordercolor=[("focus", FOCUS_RING)]
@@ -249,7 +251,12 @@ canvas_container = tk.Frame(checklist_pane, bg=BG_APP)
 canvas_container.pack(fill="both", expand=True, padx=(12, 4), pady=(0, 6))
 
 canvas = tk.Canvas(canvas_container, borderwidth=0, highlightthickness=0, yscrollincrement=1, bg=BG_APP)
-scrollbar = ttk.Scrollbar(canvas_container, orient="vertical", command=canvas.yview, style="Dark.Vertical.TScrollbar")
+
+def _on_scrollbar_scroll(*args):
+    close_combobox_popdowns()
+    canvas.yview(*args)
+
+scrollbar = ttk.Scrollbar(canvas_container, orient="vertical", command=_on_scrollbar_scroll, style="Dark.Vertical.TScrollbar")
 scrollable_frame = tk.Frame(canvas, bg=BG_APP)
 
 def _on_frame_configure(e):
@@ -304,8 +311,42 @@ def safe_focus_get():
     except Exception:
         return None
 
+style_widgets = {}
+
+def close_combobox_popdowns():
+    """Closes any open combobox popdown dropdowns (Font Family, Font Size) when scrolling."""
+    try:
+        current_grab = root.tk.eval("grab current")
+        if current_grab and ".popdown" in current_grab:
+            cb_path = current_grab.rsplit(".popdown", 1)[0]
+            root.tk.eval(f"ttk::combobox::Unpost {cb_path}")
+    except Exception:
+        pass
+    for key in ("font_combo", "size_combo"):
+        try:
+            w = style_widgets.get(key)
+            if w and w.winfo_exists():
+                w.state(["!pressed"])
+                popdown = f"{w}.popdown"
+                if bool(int(w.tk.eval(f"winfo exists {popdown}"))) and bool(int(w.tk.eval(f"winfo ismapped {popdown}"))):
+                    w.tk.eval(f"ttk::combobox::Unpost {w}")
+        except Exception:
+            pass
+
+def _on_popdown_unmap(event=None):
+    for key in ("font_combo", "size_combo"):
+        w = style_widgets.get(key)
+        if w and w.winfo_exists():
+            try:
+                w.state(["!pressed"])
+            except Exception:
+                pass
+
+root.bind_class("ComboboxPopdown", "<Unmap>", _on_popdown_unmap, add="+")
+
 # 1. macOS Trackpad Two-Finger Scrolling (<TouchpadScroll>) in Tk 9 Aqua
 def _on_touchpad(event):
+    close_combobox_popdowns()
     delta = event.delta
     # In Tk 9 Aqua, dxdy is packed into delta: deltaX = dxdy >> 16, deltaY = low 16 bits signed
     low = delta & 0xFFFF
@@ -331,54 +372,13 @@ def _on_touchpad(event):
         except Exception:
             pass
 
-    # Check if cursor is over a Text or Entry widget
-    try:
-        w = root.winfo_containing(px, py)
-    except Exception:
-        w = None
-
-    if w:
-        w_class = getattr(w, "winfo_class", lambda: "")()
-        if isinstance(w, tk.Text) or w_class == "Text":
-            try:
-                top, bottom = w.yview()
-                can_scroll_down = (bottom < 0.999)
-                can_scroll_up = (top > 0.001)
-                if (dy > 0 and can_scroll_up) or (dy < 0 and can_scroll_down):
-                    try:
-                        w.yview_scroll(-dy, "pixels")
-                    except Exception:
-                        step = -int(dy / 8) if abs(dy) >= 8 else (-1 if dy > 0 else 1)
-                        w.yview_scroll(step, "units")
-                    return "break"
-                elif top > 0.001 or bottom < 0.999:
-                    return "break"
-            except Exception:
-                pass
-        elif isinstance(w, tk.Entry) or w_class == "Entry":
-            try:
-                left, right = w.xview()
-                can_scroll_right = (right < 0.999)
-                can_scroll_left = (left > 0.001)
-                if dx != 0:
-                    if (dx > 0 and can_scroll_left) or (dx < 0 and can_scroll_right):
-                        step = -int(dx) if abs(dx) >= 1 else (-1 if dx > 0 else 1)
-                        w.xview_scroll(step, "units")
-                        return "break"
-                elif (getattr(event, "state", 0) & 1) or w == safe_focus_get():
-                    if dy != 0 and (left > 0.001 or right < 0.999):
-                        step = -int(dy / 8) if abs(dy) >= 8 else (-1 if dy > 0 else 1)
-                        w.xview_scroll(step, "units")
-                        return "break"
-            except Exception:
-                pass
-
     if dy != 0 and hasattr(canvas, "yview_scroll"):
         canvas.yview_scroll(-dy, "units")
     return "break"
 
 # 2. Traditional Mouse Wheel Scrolling (<MouseWheel>)
 def _on_mousewheel(event):
+    close_combobox_popdowns()
     if sys.platform == "darwin":
         delta = event.delta
         if abs(delta) >= 120:
@@ -410,47 +410,12 @@ def _on_mousewheel(event):
         except Exception:
             pass
 
-    # Check if cursor is over a Text or Entry widget
-    try:
-        w = root.winfo_containing(px, py)
-    except Exception:
-        w = None
-
-    if w:
-        w_class = getattr(w, "winfo_class", lambda: "")()
-        if isinstance(w, tk.Text) or w_class == "Text":
-            try:
-                top, bottom = w.yview()
-                can_scroll_down = (bottom < 0.999)
-                can_scroll_up = (top > 0.001)
-                if (units > 0 and can_scroll_down) or (units < 0 and can_scroll_up):
-                    try:
-                        w.yview_scroll(units * 12, "pixels")
-                    except Exception:
-                        step = int(units / 5) if abs(units) >= 5 else (1 if units > 0 else -1)
-                        w.yview_scroll(step, "units")
-                    return "break"
-                elif top > 0.001 or bottom < 0.999:
-                    return "break"
-            except Exception:
-                pass
-        elif isinstance(w, tk.Entry) or w_class == "Entry":
-            try:
-                left, right = w.xview()
-                if (getattr(event, "state", 0) & 1) or w == safe_focus_get():
-                    if left > 0.001 or right < 0.999:
-                        step = int(units / 5) if abs(units) >= 5 else (1 if units > 0 else -1)
-                        w.xview_scroll(step, "units")
-                        return "break"
-            except Exception:
-                pass
-
     if units != 0 and hasattr(canvas, "yview_scroll"):
         canvas.yview_scroll(units, "units")
     return "break"
 
 # Bind across ALL widget classes so trackpad and mousewheel gestures route smoothly
-for widget_class in ("Text", "Entry", "Label", "Button", "Checkbutton", "Frame", "LabelFrame", "Canvas"):
+for widget_class in ("Text", "Entry", "Label", "Button", "Checkbutton", "Frame", "LabelFrame", "Canvas", "TCombobox", "ComboboxPopdown", "ComboboxListbox", "Listbox"):
     try:
         root.bind_class(widget_class, "<TouchpadScroll>", _on_touchpad)
     except tk.TclError:
@@ -629,6 +594,9 @@ def _on_key_scroll(event):
         widget = safe_focus_get()
         in_text = widget and getattr(widget, "winfo_class", lambda: "")() in ("Text", "Entry")
 
+        if event.keysym in ("Next", "Prior") or (event.keysym in ("Home", "End", "Down", "Up") and not in_text):
+            close_combobox_popdowns()
+
         if event.keysym == "Next":
             canvas.yview_scroll(250, "units")
             return "break"
@@ -653,7 +621,6 @@ def _on_key_scroll(event):
 root.bind_all("<Key>", _on_key_scroll)
 
 # State tracking for all UI widgets
-style_widgets = {}
 sections_widgets = []
 
 _scroll_update_pending = False
@@ -2114,11 +2081,36 @@ def build_document_style_widget():
     size_combo.pack(side="left")
 
     def _on_typography_change(event=None):
+        if event and hasattr(event, "widget"):
+            try:
+                event.widget.state(["!pressed"])
+            except Exception:
+                pass
+        for key in ("font_combo", "size_combo"):
+            w = style_widgets.get(key)
+            if w and w.winfo_exists():
+                try:
+                    w.state(["!pressed"])
+                except Exception:
+                    pass
+        try:
+            root.focus_set()
+        except Exception:
+            pass
         if _is_ui_initialized:
             save_master_yaml(show_popup=False)
 
     font_combo.bind("<<ComboboxSelected>>", _on_typography_change)
     size_combo.bind("<<ComboboxSelected>>", _on_typography_change)
+
+    # Disable mouse wheel / trackpad scrolling over comboboxes so scrolling the page doesn't change dropdown values
+    for cb in (font_combo, size_combo):
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            cb.bind(seq, _on_mousewheel)
+        try:
+            cb.bind("<TouchpadScroll>", _on_touchpad)
+        except tk.TclError:
+            pass
 
     style_widgets["card"] = card
     style_widgets["font_combo"] = font_combo
