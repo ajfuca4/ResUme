@@ -722,12 +722,18 @@ def extract_sections_from_ui():
         simple_lines_list = []
         for l in s["simple_lines"]:
             lbl = l["label_entry"].get().strip()
-            txt = l["text_entry"].get().strip()
+            if "flow" in l:
+                items = l["flow"].get_items()
+                txt = ", ".join(items)
+            else:
+                txt = l.get("text_entry", tk.Entry(root)).get().strip()
+                items = [p.strip() for p in txt.split(",") if p.strip()]
             l_enabled = l["var"].get()
-            if lbl or txt:
+            if lbl or txt or items:
                 simple_lines_list.append({
                     "enabled": l_enabled,
                     "label": lbl,
+                    "items": items,
                     "text": txt
                 })
 
@@ -1327,51 +1333,338 @@ def remove_line(sec_data, line_data):
         save_master_yaml(show_popup=False)
     update_scroll()
 
+# ---------------------------------------------------------------------------
+# Single line list flow layout (comma-separated, individually reorderable fields)
+# ---------------------------------------------------------------------------
+class SingleLineFlow(tk.Frame):
+    def __init__(self, parent, bg=BG_ITEM, on_change=None):
+        super().__init__(parent, bg=bg, height=35)
+        self.pack_propagate(False)
+        self.on_change = on_change
+        self.items_data = []
+        self.add_btn = None
+        self.bind("<Configure>", self.reflow)
+
+    def set_items(self, items):
+        for c in self.winfo_children():
+            c.destroy()
+        self.items_data = []
+
+        if not items:
+            items = [""]
+
+        for text in items:
+            self._create_item_widget(text)
+
+        self.add_btn = tk.Frame(self, bg=BG_INPUT, highlightthickness=1, highlightbackground=BORDER_INPUT, cursor="hand2")
+        lbl_plus = tk.Label(self.add_btn, text="+ Item", font=F_TAG, fg=FG_MUTED, bg=BG_INPUT, cursor="hand2", padx=7, pady=3)
+        lbl_plus.pack()
+
+        def _hover_in(e):
+            self.add_btn.configure(highlightbackground=FOCUS_RING)
+            lbl_plus.configure(fg=FG)
+        def _hover_out(e):
+            self.add_btn.configure(highlightbackground=BORDER_INPUT)
+            lbl_plus.configure(fg=FG_MUTED)
+
+        self.add_btn.bind("<Enter>", _hover_in)
+        self.add_btn.bind("<Leave>", _hover_out)
+        lbl_plus.bind("<Enter>", _hover_in)
+        lbl_plus.bind("<Leave>", _hover_out)
+
+        def _on_add(e=None):
+            self.add_item("")
+
+        self.add_btn.bind("<Button-1>", _on_add)
+        lbl_plus.bind("<Button-1>", _on_add)
+        self._update_button_states()
+        self.reflow()
+
+    def _create_item_widget(self, text):
+        chip = tk.Frame(self, bg=BG_INPUT, highlightthickness=1, highlightbackground=BORDER_INPUT)
+
+        btn_l = tk.Label(chip, text="‹", font=("Helvetica", 11, "bold"), fg=FG_MUTED, bg=BG_INPUT, cursor="hand2", padx=4)
+        btn_l.pack(side="left")
+
+        entry = tk.Entry(
+            chip, font=F_BODY, bg=BG_INPUT, fg=FG, insertbackground=FG,
+            relief="flat", bd=0, highlightthickness=0, width=max(3, len(text) + 1)
+        )
+        entry.insert(0, text)
+        entry.pack(side="left", padx=2, pady=3)
+
+        btn_r = tk.Label(chip, text="›", font=("Helvetica", 11, "bold"), fg=FG_MUTED, bg=BG_INPUT, cursor="hand2", padx=4)
+        btn_r.pack(side="left")
+
+        btn_x = tk.Label(chip, text="×", font=("Helvetica", 12, "bold"), fg=FG_DIM, bg=BG_INPUT, cursor="hand2", padx=4)
+        btn_x.pack(side="left")
+
+        comma = tk.Label(self, text=",", font=F_BODY_B, fg=FG_MUTED, bg=BG_ITEM)
+
+        item_obj = {"chip": chip, "entry": entry, "comma": comma, "btn_l": btn_l, "btn_r": btn_r, "btn_x": btn_x}
+
+        entry.bind("<FocusIn>", lambda e: chip.configure(highlightbackground=FOCUS_RING))
+        entry.bind("<FocusOut>", lambda e: chip.configure(highlightbackground=BORDER_INPUT))
+
+        def _move_left(e=None):
+            i = self.items_data.index(item_obj)
+            if i > 0:
+                self.items_data[i - 1], self.items_data[i] = self.items_data[i], self.items_data[i - 1]
+                self._update_button_states()
+                self.reflow()
+                entry.focus_set()
+                if self.on_change:
+                    self.on_change()
+            return "break"
+
+        def _move_right(e=None):
+            i = self.items_data.index(item_obj)
+            if i < len(self.items_data) - 1:
+                self.items_data[i + 1], self.items_data[i] = self.items_data[i], self.items_data[i + 1]
+                self._update_button_states()
+                self.reflow()
+                entry.focus_set()
+                if self.on_change:
+                    self.on_change()
+            return "break"
+
+        def _delete(e=None):
+            if len(self.items_data) > 1:
+                chip.destroy()
+                comma.destroy()
+                self.items_data.remove(item_obj)
+                self._update_button_states()
+                self.reflow()
+                if self.on_change:
+                    self.on_change()
+            else:
+                entry.delete(0, "end")
+                entry.configure(width=3)
+                self.reflow()
+                if self.on_change:
+                    self.on_change()
+            return "break"
+
+        item_obj["move_left"] = _move_left
+        item_obj["move_right"] = _move_right
+        item_obj["delete"] = _delete
+
+        btn_l.bind("<Button-1>", _move_left)
+        btn_r.bind("<Button-1>", _move_right)
+        btn_x.bind("<Button-1>", _delete)
+
+        btn_l.bind("<Enter>", lambda e: btn_l.configure(fg=FG) if self.items_data.index(item_obj) > 0 else None)
+        btn_l.bind("<Leave>", lambda e: btn_l.configure(fg=FG_MUTED if self.items_data.index(item_obj) > 0 else BORDER_INPUT))
+        btn_r.bind("<Enter>", lambda e: btn_r.configure(fg=FG) if self.items_data.index(item_obj) < len(self.items_data) - 1 else None)
+        btn_r.bind("<Leave>", lambda e: btn_r.configure(fg=FG_MUTED if self.items_data.index(item_obj) < len(self.items_data) - 1 else BORDER_INPUT))
+        btn_x.bind("<Enter>", lambda e: btn_x.configure(fg=DANGER))
+        btn_x.bind("<Leave>", lambda e: btn_x.configure(fg=FG_DIM))
+
+        def _on_key_release(e):
+            val = entry.get()
+            entry.configure(width=max(3, len(val) + 1))
+            self.reflow()
+            if self.on_change:
+                self.on_change()
+
+        entry.bind("<KeyRelease>", _on_key_release)
+
+        def _on_key_press(e):
+            if e.keysym == "comma" or getattr(e, "char", "") == ",":
+                val = entry.get()
+                cur_pos = entry.index("insert")
+                part1 = val[:cur_pos].strip()
+                part2 = val[cur_pos:].strip()
+                entry.delete(0, "end")
+                entry.insert(0, part1)
+                entry.configure(width=max(3, len(part1) + 1))
+                i = self.items_data.index(item_obj)
+                self.insert_item(i + 1, part2)
+                return "break"
+            elif e.keysym in ("Return", "KP_Enter"):
+                i = self.items_data.index(item_obj)
+                self.insert_item(i + 1, "")
+                return "break"
+
+        entry.bind("<KeyPress>", _on_key_press)
+
+        def _on_backspace(e):
+            if not entry.get() and len(self.items_data) > 1:
+                i = self.items_data.index(item_obj)
+                prev_i = max(0, i - 1)
+                _delete()
+                if prev_i < len(self.items_data):
+                    self.items_data[prev_i]["entry"].focus_set()
+                return "break"
+
+        entry.bind("<BackSpace>", _on_backspace)
+        entry.bind("<Alt-Left>", lambda e: _move_left() or "break")
+        entry.bind("<Alt-Right>", lambda e: _move_right() or "break")
+
+        def _on_paste(e):
+            try:
+                clip = self.clipboard_get()
+                if "," in clip:
+                    parts = [p.strip() for p in clip.split(",") if p.strip()]
+                    if parts:
+                        entry.delete(0, "end")
+                        entry.insert(0, parts[0])
+                        entry.configure(width=max(3, len(parts[0]) + 1))
+                        i = self.items_data.index(item_obj)
+                        for offset, p in enumerate(parts[1:], start=1):
+                            self.insert_item(i + offset, p)
+                        return "break"
+            except Exception:
+                pass
+
+        entry.bind("<<Paste>>", _on_paste)
+        entry.bind("<Command-v>", _on_paste)
+        entry.bind("<Control-v>", _on_paste)
+
+        self.items_data.append(item_obj)
+        self._update_button_states()
+        return item_obj
+
+    def _update_button_states(self):
+        n = len(self.items_data)
+        for i, it in enumerate(self.items_data):
+            can_left = (i > 0)
+            can_right = (i < n - 1)
+            it["btn_l"].configure(
+                fg=FG_MUTED if can_left else BORDER_INPUT,
+                cursor="hand2" if can_left else ""
+            )
+            it["btn_r"].configure(
+                fg=FG_MUTED if can_right else BORDER_INPUT,
+                cursor="hand2" if can_right else ""
+            )
+
+    def add_item(self, text=""):
+        obj = self._create_item_widget(text)
+        self.reflow()
+        obj["entry"].focus_set()
+        if self.on_change:
+            self.on_change()
+
+    def insert_item(self, index, text=""):
+        obj = self._create_item_widget(text)
+        self.items_data.remove(obj)
+        self.items_data.insert(index, obj)
+        self._update_button_states()
+        self.reflow()
+        obj["entry"].focus_set()
+        if self.on_change:
+            self.on_change()
+
+    def get_items(self):
+        return [it["entry"].get().strip() for it in self.items_data if it["entry"].get().strip()]
+
+    def reflow(self, event=None):
+        self.update_idletasks()
+        avail_w = self.winfo_width()
+        if avail_w <= 10:
+            return
+
+        cur_x = 0
+        cur_y = 0
+        row_h = 32
+        gap_x = 5
+        gap_y = 6
+
+        n = len(self.items_data)
+        for i, it in enumerate(self.items_data):
+            chip = it["chip"]
+            comma = it["comma"]
+            cw = chip.winfo_reqwidth()
+            comma_w = comma.winfo_reqwidth() if i < n - 1 else 0
+            item_tot_w = cw + (comma_w + 3 if i < n - 1 else 0)
+
+            if cur_x + item_tot_w > avail_w and cur_x > 0:
+                cur_x = 0
+                cur_y += row_h + gap_y
+
+            chip.place(x=cur_x, y=cur_y)
+            if i < n - 1:
+                comma.place(x=cur_x + cw + 1, y=cur_y + 4)
+            else:
+                comma.place_forget()
+            cur_x += item_tot_w + gap_x
+
+        if self.add_btn:
+            btn_w = self.add_btn.winfo_reqwidth()
+            if cur_x + btn_w > avail_w and cur_x > 0:
+                cur_x = 0
+                cur_y += row_h + gap_y
+            self.add_btn.place(x=cur_x, y=cur_y + 2)
+
+        total_h = cur_y + row_h + 4
+        old_h = getattr(self, "_last_reflow_h", None)
+        self._last_reflow_h = total_h
+        self.configure(height=total_h)
+        if hasattr(self.master, "master") and isinstance(self.master.master, RoundedCard):
+            self.master.master._sync_height()
+        elif hasattr(self.master, "_sync_height"):
+            self.master._sync_height()
+        if old_h is not None and old_h != total_h:
+            update_scroll()
+
 def add_line_widget(sec_data, parent_container, line_dict=None):
     if line_dict is None:
-        line_dict = {"enabled": True, "label": "", "text": ""}
+        line_dict = {"enabled": True, "label": "", "text": "", "items": [""]}
 
     is_included = line_dict.get("enabled", True)
 
     card = RoundedCard(parent_container, bg=BG_ITEM, parent_bg=BG_SECTION,
                        border=BORDER_ITEM, radius=12, padx=12,
-                       pady=9 if is_included else 6)
+                       pady=10 if is_included else 6)
     card.pack(fill="x", pady=4)
-    row = card.inner
+    inner = card.inner
+
+    top_row = tk.Frame(inner, bg=BG_ITEM)
+    top_row.pack(fill="x")
 
     var = tk.BooleanVar(value=is_included)
-    Toggle(row, var, BG_ITEM, command=lambda: update_line_collapse_ui()).pack(side="left", padx=(0, 10))
+    Toggle(top_row, var, BG_ITEM, command=lambda: update_line_collapse_ui()).pack(side="left", padx=(0, 10))
 
-    el = make_entry(row, width=16, font=F_BODY_B, fg=FG if is_included else FG_DIM)
+    el = make_entry(top_row, width=18, font=F_BODY_B, fg=FG if is_included else FG_DIM)
     el.insert(0, line_dict.get("label", ""))
     el.pack(side="left", padx=(0, 8))
 
-    status_lbl = tk.Label(row, text="" if is_included else "EXCLUDED", font=F_TAG, bg=BG_ITEM, fg=FG_DIM)
+    status_lbl = tk.Label(top_row, text="" if is_included else "EXCLUDED", font=F_TAG, bg=BG_ITEM, fg=FG_DIM)
     status_lbl.pack(side="left", padx=4)
 
-    line_data = {"var": var, "label_entry": el, "frame": card}
+    flow = SingleLineFlow(inner, bg=BG_ITEM, on_change=_autosave)
+
+    raw_items = line_dict.get("items")
+    if not raw_items:
+        raw_text = line_dict.get("text", "")
+        raw_items = [s.strip() for s in raw_text.split(",") if s.strip()]
+    if not raw_items:
+        raw_items = [""]
+
+    flow.set_items(raw_items)
+
+    line_data = {"var": var, "label_entry": el, "flow": flow, "frame": card}
 
     _icon_controls(
-        row, BG_ITEM,
+        top_row, BG_ITEM,
         lambda: move_line_up(sec_data, line_data),
         lambda: move_line_down(sec_data, line_data),
         lambda: remove_line(sec_data, line_data),
     ).pack(side="right", padx=(8, 0))
 
-    et = make_entry(row)
-    et.insert(0, line_dict.get("text", ""))
     if is_included:
-        et.pack(side="left", fill="x", expand=True)
-    line_data["text_entry"] = et
+        flow.pack(fill="x", pady=(6, 0))
 
     def update_line_collapse_ui():
         if var.get():
             status_lbl.configure(text="")
-            et.pack(side="left", fill="x", expand=True)
-            card.set_padding(pady=9)
+            flow.pack(fill="x", pady=(6, 0))
+            card.set_padding(pady=10)
             el.configure(fg=FG)
+            flow.reflow()
         else:
-            et.pack_forget()
+            flow.pack_forget()
             status_lbl.configure(text="EXCLUDED")
             card.set_padding(pady=6)
             el.configure(fg=FG_DIM)
