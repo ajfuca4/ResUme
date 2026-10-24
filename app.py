@@ -298,6 +298,12 @@ def get_scroll_target():
             pass
     return canvas
 
+def safe_focus_get():
+    try:
+        return root.focus_get()
+    except Exception:
+        return None
+
 # 1. macOS Trackpad Two-Finger Scrolling (<TouchpadScroll>) in Tk 9 Aqua
 def _on_touchpad(event):
     delta = event.delta
@@ -359,7 +365,7 @@ def _on_touchpad(event):
                         step = -int(dx) if abs(dx) >= 1 else (-1 if dx > 0 else 1)
                         w.xview_scroll(step, "units")
                         return "break"
-                elif (getattr(event, "state", 0) & 1) or w == root.focus_get():
+                elif (getattr(event, "state", 0) & 1) or w == safe_focus_get():
                     if dy != 0 and (left > 0.001 or right < 0.999):
                         step = -int(dy / 8) if abs(dy) >= 8 else (-1 if dy > 0 else 1)
                         w.xview_scroll(step, "units")
@@ -431,7 +437,7 @@ def _on_mousewheel(event):
         elif isinstance(w, tk.Entry) or w_class == "Entry":
             try:
                 left, right = w.xview()
-                if (getattr(event, "state", 0) & 1) or w == root.focus_get():
+                if (getattr(event, "state", 0) & 1) or w == safe_focus_get():
                     if left > 0.001 or right < 0.999:
                         step = int(units / 5) if abs(units) >= 5 else (1 if units > 0 else -1)
                         w.xview_scroll(step, "units")
@@ -619,31 +625,35 @@ textbox_autoscroller = TextBoxAutoScroller(root)
 
 # Keyboard navigation (PageUp, PageDown, Home, End, Up, Down)
 def _on_key_scroll(event):
-    widget = root.focus_get()
-    in_text = widget and widget.winfo_class() in ("Text", "Entry")
+    try:
+        widget = safe_focus_get()
+        in_text = widget and getattr(widget, "winfo_class", lambda: "")() in ("Text", "Entry")
 
-    if event.keysym == "Next":
-        canvas.yview_scroll(250, "units")
-        return "break"
-    elif event.keysym == "Prior":
-        canvas.yview_scroll(-250, "units")
-        return "break"
-    elif event.keysym == "Home" and not in_text:
-        canvas.yview_moveto(0)
-        return "break"
-    elif event.keysym == "End" and not in_text:
-        canvas.yview_moveto(1)
-        return "break"
-    elif event.keysym == "Down" and not in_text:
-        canvas.yview_scroll(40, "units")
-        return "break"
-    elif event.keysym == "Up" and not in_text:
-        canvas.yview_scroll(-40, "units")
-        return "break"
+        if event.keysym == "Next":
+            canvas.yview_scroll(250, "units")
+            return "break"
+        elif event.keysym == "Prior":
+            canvas.yview_scroll(-250, "units")
+            return "break"
+        elif event.keysym == "Home" and not in_text:
+            canvas.yview_moveto(0)
+            return "break"
+        elif event.keysym == "End" and not in_text:
+            canvas.yview_moveto(1)
+            return "break"
+        elif event.keysym == "Down" and not in_text:
+            canvas.yview_scroll(40, "units")
+            return "break"
+        elif event.keysym == "Up" and not in_text:
+            canvas.yview_scroll(-40, "units")
+            return "break"
+    except Exception:
+        pass
 
 root.bind_all("<Key>", _on_key_scroll)
 
 # State tracking for all UI widgets
+style_widgets = {}
 sections_widgets = []
 
 _scroll_update_pending = False
@@ -743,6 +753,13 @@ def save_master_yaml(show_popup=False, recompile_preview=True):
     if header_widgets:
         master_data["name"] = header_widgets["name_entry"].get().strip()
         master_data["links"] = extract_links_from_ui()
+
+    if style_widgets:
+        if "font_combo" in style_widgets:
+            master_data["font_family"] = style_widgets["font_combo"].get()
+        if "size_combo" in style_widgets:
+            master_data["font_size"] = style_widgets["size_combo"].get()
+    elif header_widgets:
         if "font_combo" in header_widgets:
             master_data["font_family"] = header_widgets["font_combo"].get()
         if "size_combo" in header_widgets:
@@ -821,11 +838,17 @@ def on_field_focus_out(event):
 def on_global_click(event):
     if not _is_ui_initialized:
         return
-    widget = event.widget
-    focused = root.focus_get()
-    if focused and focused.winfo_class() in ("Entry", "Text"):
-        if widget != focused and widget.winfo_class() not in ("Entry", "Text"):
-            root.focus_set()
+    try:
+        widget = event.widget
+        if isinstance(widget, str) or "popdown" in str(widget):
+            return
+        focused = safe_focus_get()
+        if focused and getattr(focused, "winfo_class", lambda: "")() in ("Entry", "Text"):
+            w_class = getattr(widget, "winfo_class", lambda: "")()
+            if widget != focused and w_class not in ("Entry", "Text"):
+                root.focus_set()
+    except Exception:
+        pass
 
 # Enter key unfocuses entry and triggers save
 def on_entry_return(event):
@@ -1706,7 +1729,10 @@ def add_link_widget(parent_container, link_dict=None):
     header_widgets["links"].append(link_data)
     update_scroll()
 
-def build_header_widget():
+# ---------------------------------------------------------------------------
+# Document Style (typography and layout)
+# ---------------------------------------------------------------------------
+def build_document_style_widget():
     card = RoundedCard(scrollable_frame, bg=BG_SECTION, parent_bg=BG_APP,
                        border=BORDER_SECTION, radius=16, padx=16, pady=14)
     card.pack(fill="x", pady=7, padx=(14, 8))
@@ -1714,19 +1740,20 @@ def build_header_widget():
 
     top = tk.Frame(inner, bg=BG_SECTION)
     top.pack(fill="x", pady=(0, 10))
-    tk.Label(top, text="Header", font=F_SECTION, bg=BG_SECTION, fg=FG).pack(side="left")
-    tk.Label(top, text="Name and contact links shown at the top of the resume",
+    tk.Label(top, text="Document Style", font=F_SECTION, bg=BG_SECTION, fg=FG).pack(side="left")
+    tk.Label(top, text="Font and sizing options for the compiled resume",
              font=F_LABEL, bg=BG_SECTION, fg=FG_DIM).pack(side="left", padx=10, pady=(4, 0))
 
-    # Typography controls (Font & Font Size) in top right corner of Header card
-    font_controls = tk.Frame(top, bg=BG_SECTION)
-    font_controls.pack(side="right")
+    style_card = RoundedCard(inner, bg=BG_ITEM, parent_bg=BG_SECTION,
+                            border=BORDER_ITEM, radius=12, padx=14, pady=10)
+    style_card.pack(fill="x")
+    row = style_card.inner
 
-    make_label(font_controls, "Font", BG_SECTION).pack(side="left", padx=(0, 6))
+    make_label(row, "Font Family", BG_ITEM).pack(side="left", padx=(0, 8))
     cur_font = master_data.get("font_family") or "Default (Computer Modern)"
     font_var = tk.StringVar(value=cur_font)
     font_combo = ttk.Combobox(
-        font_controls,
+        row,
         textvariable=font_var,
         values=[
             "Default (Computer Modern)",
@@ -1738,22 +1765,22 @@ def build_header_widget():
             "Source Sans Pro",
         ],
         state="readonly",
-        width=20,
+        width=24,
         style="Dark.TCombobox"
     )
     font_combo.var = font_var
     font_combo.set(cur_font)
-    font_combo.pack(side="left", padx=(0, 12))
+    font_combo.pack(side="left", padx=(0, 24))
 
-    make_label(font_controls, "Size", BG_SECTION).pack(side="left", padx=(0, 6))
+    make_label(row, "Font Size", BG_ITEM).pack(side="left", padx=(0, 8))
     cur_size = master_data.get("font_size") or "10pt"
     size_var = tk.StringVar(value=cur_size)
     size_combo = ttk.Combobox(
-        font_controls,
+        row,
         textvariable=size_var,
         values=["8pt", "9pt", "10pt", "11pt", "12pt", "14pt"],
         state="readonly",
-        width=7,
+        width=8,
         style="Dark.TCombobox"
     )
     size_combo.var = size_var
@@ -1767,6 +1794,24 @@ def build_header_widget():
     font_combo.bind("<<ComboboxSelected>>", _on_typography_change)
     size_combo.bind("<<ComboboxSelected>>", _on_typography_change)
 
+    style_widgets["card"] = card
+    style_widgets["font_combo"] = font_combo
+    style_widgets["font_var"] = font_var
+    style_widgets["size_combo"] = size_combo
+    style_widgets["size_var"] = size_var
+
+def build_header_widget():
+    card = RoundedCard(scrollable_frame, bg=BG_SECTION, parent_bg=BG_APP,
+                       border=BORDER_SECTION, radius=16, padx=16, pady=14)
+    card.pack(fill="x", pady=7, padx=(14, 8))
+    inner = card.inner
+
+    top = tk.Frame(inner, bg=BG_SECTION)
+    top.pack(fill="x", pady=(0, 10))
+    tk.Label(top, text="Header", font=F_SECTION, bg=BG_SECTION, fg=FG).pack(side="left")
+    tk.Label(top, text="Name and contact links shown at the top of the resume",
+             font=F_LABEL, bg=BG_SECTION, fg=FG_DIM).pack(side="left", padx=10, pady=(4, 0))
+
     # Name
     name_card = RoundedCard(inner, bg=BG_ITEM, parent_bg=BG_SECTION,
                             border=BORDER_ITEM, radius=12, padx=14, pady=10)
@@ -1777,10 +1822,6 @@ def build_header_widget():
     name_entry.pack(side="left", fill="x", expand=True)
 
     header_widgets["name_entry"] = name_entry
-    header_widgets["font_combo"] = font_combo
-    header_widgets["font_var"] = font_var
-    header_widgets["size_combo"] = size_combo
-    header_widgets["size_var"] = size_var
     header_widgets["links"] = []
 
     # Links
@@ -1821,7 +1862,8 @@ def build_header_widget():
         parent_bg=BG_SECTION, bg=BG_ITEM, fg=FG_MUTED, border=BORDER_ITEM, padx=12, pady=5,
     ).pack(side="left")
 
-# Build header + initial sections in UI
+# Build document style + header + initial sections in UI
+build_document_style_widget()
 build_header_widget()
 for sec in master_data.get("sections", []):
     add_section_widget(sec)

@@ -5,7 +5,7 @@
 % License : MIT
 %------------------------
 
-\documentclass[letterpaper,10pt]{extarticle}
+\documentclass[letterpaper,\VAR{font_size | default('10pt', true)}]{extarticle}
 
 \usepackage{latexsym}
 \usepackage[empty]{fullpage}
@@ -24,15 +24,19 @@
 
 
 %----------FONT OPTIONS----------
-% sans-serif
-% \usepackage[sfdefault]{FiraSans}
-% \usepackage[sfdefault]{roboto}
-% \usepackage[sfdefault]{noto-sans}
-% \usepackage[default]{sourcesanspro}
-
-% serif
-% \usepackage{CormorantGaramond}
-% \usepackage{charter}
+\BLOCK{ if font_family == 'Charter' }
+\usepackage{charter}
+\BLOCK{ elif font_family == 'Cormorant Garamond' }
+\usepackage{CormorantGaramond}
+\BLOCK{ elif font_family == 'Fira Sans' }
+\usepackage[sfdefault]{FiraSans}
+\BLOCK{ elif font_family == 'Roboto' }
+\usepackage[sfdefault]{roboto}
+\BLOCK{ elif font_family == 'Noto Sans' }
+\usepackage[sfdefault]{noto-sans}
+\BLOCK{ elif font_family == 'Source Sans Pro' }
+\usepackage[default]{sourcesanspro}
+\BLOCK{ endif }
 
 
 \pagestyle{fancy}
