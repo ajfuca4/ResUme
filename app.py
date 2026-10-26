@@ -2195,8 +2195,15 @@ def escape_latex(s):
     result = []
     i = 0
     n = len(s)
-    # Characters that must be escaped with a backslash in LaTeX
-    special_chars = {"%": r"\%", "&": r"\&", "$": r"\$", "#": r"\#", "_": r"\_"}
+    # Characters that must be escaped in LaTeX
+    special_chars = {
+        "%": r"\%",
+        "&": r"\&",
+        "$": r"\$",
+        "#": r"\#",
+        "_": r"\_",
+        "~": r"\textasciitilde{}",
+    }
     while i < n:
         char = s[i]
         if char == "\\":
