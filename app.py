@@ -1389,11 +1389,14 @@ class SingleLineFlow(tk.Frame):
         btn_l.pack(side="left", padx=1)
 
         btn_r = tk.Label(chip, text="▶", font=(UI_FONT, 7), fg=FG_MUTED, bg=BG_INPUT, cursor="hand2", padx=1)
-        btn_r.pack(side="left", padx=(1, 5))
+        btn_r.pack(side="left", padx=(1, 2))
+
+        btn_x = tk.Label(chip, text="✕", font=(UI_FONT, 8, "bold"), fg=FG_DIM, bg=BG_INPUT, cursor="hand2", padx=2)
+        btn_x.pack(side="left", padx=(1, 5))
 
         comma = tk.Label(self, text=",", font=F_BODY_B, fg=FG_MUTED, bg=BG_ITEM)
 
-        item_obj = {"chip": chip, "var": var, "toggle": toggle, "entry": entry, "comma": comma, "btn_l": btn_l, "btn_r": btn_r}
+        item_obj = {"chip": chip, "var": var, "toggle": toggle, "entry": entry, "comma": comma, "btn_l": btn_l, "btn_r": btn_r, "btn_x": btn_x}
 
         entry.bind("<FocusIn>", lambda e: chip.configure(highlightbackground=FOCUS_RING))
         entry.bind("<FocusOut>", lambda e: chip.configure(highlightbackground=BORDER_INPUT))
@@ -1421,20 +1424,14 @@ class SingleLineFlow(tk.Frame):
             return "break"
 
         def _delete(e=None):
-            if len(self.items_data) > 1:
-                chip.destroy()
-                comma.destroy()
+            chip.destroy()
+            comma.destroy()
+            if item_obj in self.items_data:
                 self.items_data.remove(item_obj)
-                self._update_button_states()
-                self.reflow()
-                if self.on_change:
-                    self.on_change()
-            else:
-                entry.delete(0, "end")
-                entry.configure(width=3)
-                self.reflow()
-                if self.on_change:
-                    self.on_change()
+            self._update_button_states()
+            self.reflow()
+            if self.on_change:
+                self.on_change()
             return "break"
 
         item_obj["move_left"] = _move_left
@@ -1443,11 +1440,14 @@ class SingleLineFlow(tk.Frame):
 
         btn_l.bind("<Button-1>", _move_left)
         btn_r.bind("<Button-1>", _move_right)
+        btn_x.bind("<Button-1>", _delete)
 
         btn_l.bind("<Enter>", lambda e: btn_l.configure(fg=FG) if self.items_data.index(item_obj) > 0 else None)
         btn_l.bind("<Leave>", lambda e: btn_l.configure(fg=FG_MUTED if self.items_data.index(item_obj) > 0 else BORDER_INPUT))
         btn_r.bind("<Enter>", lambda e: btn_r.configure(fg=FG) if self.items_data.index(item_obj) < len(self.items_data) - 1 else None)
         btn_r.bind("<Leave>", lambda e: btn_r.configure(fg=FG_MUTED if self.items_data.index(item_obj) < len(self.items_data) - 1 else BORDER_INPUT))
+        btn_x.bind("<Enter>", lambda e: btn_x.configure(fg=DANGER))
+        btn_x.bind("<Leave>", lambda e: btn_x.configure(fg=FG_DIM))
 
         def _on_key_release(e):
             val = entry.get()
