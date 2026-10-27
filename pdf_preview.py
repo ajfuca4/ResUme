@@ -1,7 +1,7 @@
 """In-app live PDF preview pane & window for ResUme.
 
 Renders compiled LaTeX PDFs using pypdfium2 and Pillow directly onto a dark-mode,
-zoomable Tkinter Canvas with smooth trackpad scrolling and live recompile controls.
+zoomable Tkinter Canvas with smooth trackpad scrolling.
 """
 import os
 import subprocess
@@ -23,14 +23,13 @@ from ui_widgets import (
 
 
 class PDFPreviewPane(tk.Frame):
-    """Embedded live PDF preview pane with zoom, fit-to-width, and live recompile."""
+    """Embedded live PDF preview pane with zoom and fit-to-width."""
 
-    def __init__(self, parent, pdf_path=None, tex_path=None, recompile_callback=None):
+    def __init__(self, parent, pdf_path=None, tex_path=None):
         super().__init__(parent, bg=BG_APP)
         self.parent = parent
         self.pdf_path = pdf_path
         self.tex_path = tex_path
-        self.recompile_callback = recompile_callback
 
         self.scale = 1.0
         self.current_page = 0
@@ -63,13 +62,6 @@ class PDFPreviewPane(tk.Frame):
             left_box, text="Ready", font=F_LABEL, bg=BG_BAR, fg=FG_MUTED
         )
         self.status_lbl.pack(side="left", padx=2)
-
-        self.refresh_btn = PillButton(
-            left_box, "↻ Recompile", self.on_recompile,
-            parent_bg=BG_BAR, bg=BG_ITEM, fg=FG, border=BORDER_ITEM,
-            font=F_BTN_B, padx=8, pady=4, radius=6
-        )
-        self.refresh_btn.pack(side="left", padx=(8, 2))
 
         # Right controls: Page navigation, Zoom, Fit
         right_box = tk.Frame(self.toolbar, bg=BG_BAR)
@@ -473,30 +465,6 @@ class PDFPreviewPane(tk.Frame):
             justify="center", width=max(220, cw * 2 - 80)
         )
 
-    def on_recompile(self):
-        if self.recompile_callback:
-            self.status_lbl.configure(text="Compiling...")
-            self.update_idletasks()
-            res = self.recompile_callback()
-            if isinstance(res, tuple):
-                success = res[0]
-                pdf_path = res[1] if len(res) > 1 and isinstance(res[1], str) else None
-                err_msg = res[2] if len(res) > 2 else (res[1] if len(res) > 1 and not pdf_path else None)
-                if pdf_path and os.path.exists(pdf_path):
-                    self.pdf_path = pdf_path
-            else:
-                success = bool(res)
-                err_msg = None
-
-            if success:
-                self.load_pdf(self.pdf_path)
-            else:
-                self.status_lbl.configure(text="Compile failed")
-                if err_msg:
-                    messagebox.showerror("LaTeX Compilation Error", err_msg, parent=self.winfo_toplevel())
-        else:
-            self.load_pdf(self.pdf_path)
-
     def open_in_preview_app(self):
         if self.pdf_path and os.path.exists(self.pdf_path):
             subprocess.run(["open", "-a", "Preview", self.pdf_path])
@@ -507,7 +475,7 @@ class PDFPreviewPane(tk.Frame):
 class PDFPreviewWindow(tk.Toplevel):
     """Floating PDF Preview window (backward-compatible wrapper around PDFPreviewPane)."""
 
-    def __init__(self, parent, pdf_path, tex_path, recompile_callback=None):
+    def __init__(self, parent, pdf_path, tex_path):
         super().__init__(parent)
         self.parent = parent
         self.title("ResUme - Live PDF Preview")
@@ -516,8 +484,7 @@ class PDFPreviewWindow(tk.Toplevel):
         self.configure(bg=BG_APP)
 
         self.pane = PDFPreviewPane(
-            self, pdf_path=pdf_path, tex_path=tex_path,
-            recompile_callback=recompile_callback
+            self, pdf_path=pdf_path, tex_path=tex_path
         )
         self.pane.pack(fill="both", expand=True)
 

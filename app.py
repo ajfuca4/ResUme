@@ -276,10 +276,7 @@ canvas.pack(side="left", fill="both", expand=True)
 scrollbar.pack(side="right", fill="y", pady=4)
 
 # Right Pane: Embedded Live PDF Preview
-preview_pane = PDFPreviewPane(
-    content_paned,
-    recompile_callback=lambda: recompile_for_preview()
-)
+preview_pane = PDFPreviewPane(content_paned)
 content_paned.add(preview_pane, minsize=420, stretch="always")
 
 def _init_paned_split():
@@ -659,13 +656,19 @@ def extract_sections_from_ui():
 
             if it_type == "single-line":
                 title_val = it["e_title"].get().strip()
-                subtitle_val = it["e_subtitle"].get().strip()
+                if "subtitle_flow" in it:
+                    subtitle_items = it["subtitle_flow"].get_items()
+                    subtitle_val = it["subtitle_flow"].get_enabled_text()
+                else:
+                    subtitle_val = it["e_subtitle"].get().strip()
+                    subtitle_items = [{"enabled": True, "text": p.strip()} for p in subtitle_val.split(",") if p.strip()]
                 date_val = it["e_date"].get().strip()
-                if title_val or subtitle_val or date_val or bullets_list:
+                if title_val or subtitle_val or subtitle_items or date_val or bullets_list:
                     entries_list.append({
                         "type": "single-line",
                         "enabled": it_enabled,
                         "title": title_val,
+                        "subtitle_items": subtitle_items,
                         "subtitle": subtitle_val,
                         "date": date_val,
                         "bullets": bullets_list
@@ -1165,7 +1168,7 @@ def add_dual_line_item_widget(sec_data, parent_container, item_dict=None):
 
 def add_single_line_item_widget(sec_data, parent_container, item_dict=None):
     if item_dict is None:
-        item_dict = {"type": "single-line", "enabled": True, "title": "", "subtitle": "", "date": "", "bullets": []}
+        item_dict = {"type": "single-line", "enabled": True, "title": "", "subtitle": "", "subtitle_items": [""], "date": "", "bullets": []}
 
     is_included = item_dict.get("enabled", True)
 
@@ -1180,9 +1183,8 @@ def add_single_line_item_widget(sec_data, parent_container, item_dict=None):
 
     fields = tk.Frame(body, bg=BG_ITEM)
     fields.pack(fill="x")
-    fields.columnconfigure(2, weight=2)
-    fields.columnconfigure(4, weight=3)
-    fields.columnconfigure(6, weight=0 if is_included else 1)
+    fields.columnconfigure(2, weight=1)
+    fields.columnconfigure(4, weight=0 if is_included else 1)
 
     # Toggle & Title always on Row 0
     Toggle(fields, var, BG_ITEM, command=lambda: update_single_collapse_ui()).grid(row=0, column=0, padx=(0, 10), sticky="w")
@@ -1193,35 +1195,41 @@ def add_single_line_item_widget(sec_data, parent_container, item_dict=None):
     e_title.insert(0, item_dict.get("title") if "title" in item_dict else item_dict.get("field1", ""))
     e_title.grid(row=0, column=2, sticky="ew", pady=3)
 
-    # Subtitle widgets
-    lbl_subtitle = make_label(fields, "Subtitle", BG_ITEM)
-    lbl_subtitle.grid(row=0, column=3, sticky="w", padx=(14, 8))
-    e_subtitle = make_entry(fields, font=F_BODY_I, fg=FG if is_included else FG_DIM)
-    e_subtitle.insert(0, item_dict.get("subtitle") if "subtitle" in item_dict else item_dict.get("field3", ""))
-    e_subtitle.grid(row=0, column=4, sticky="ew", pady=3)
-
-    # Date widgets
+    # Date widgets (Row 0, right of Title)
     lbl_date = make_label(fields, "Date", BG_ITEM)
     e_date = make_entry(fields, width=20, fg=FG)
     e_date.insert(0, item_dict.get("date") if "date" in item_dict else item_dict.get("field2", ""))
 
     status_lbl = tk.Label(fields, text="" if is_included else "EXCLUDED", font=F_TAG, bg=BG_ITEM, fg=FG_DIM)
-    status_lbl.grid(row=0, column=7, padx=8, sticky="w")
+    status_lbl.grid(row=0, column=5, padx=8, sticky="w")
 
     _icon_controls(
         fields, BG_ITEM,
         lambda: move_item_up(sec_data, item_data),
         lambda: move_item_down(sec_data, item_data),
         lambda: remove_item(sec_data, item_data),
-    ).grid(row=0, column=8, padx=(10, 0), sticky="e")
+    ).grid(row=0, column=6, padx=(10, 0), sticky="e")
+
+    # Subtitle tag flow widgets (Row 1, below Title and Date)
+    lbl_subtitle = make_label(fields, "Subtitle", BG_ITEM)
+    subtitle_flow = SingleLineFlow(fields, bg=BG_ITEM, on_change=_autosave)
+
+    raw_sub_items = item_dict.get("subtitle_items") or item_dict.get("items")
+    if not raw_sub_items:
+        raw_sub_text = item_dict.get("subtitle") if "subtitle" in item_dict else item_dict.get("field3", "")
+        raw_sub_items = [s.strip() for s in str(raw_sub_text or "").split(",") if s.strip()]
+    if not raw_sub_items:
+        raw_sub_items = [""]
+
+    subtitle_flow.set_items(raw_sub_items)
 
     item_data.update({
         "e_title": e_title,
-        "e_subtitle": e_subtitle,
+        "subtitle_flow": subtitle_flow,
         "e_date": e_date,
         "e1": e_title,
         "e2": e_date,
-        "e3": e_subtitle,
+        "e3": None,
         "e4": None,
     })
 
@@ -1243,30 +1251,35 @@ def add_single_line_item_widget(sec_data, parent_container, item_dict=None):
     ).pack(anchor="w", padx=(22, 0), pady=(6, 0))
 
     if is_included:
-        lbl_date.grid(row=0, column=5, sticky="w", padx=(14, 8))
-        e_date.grid(row=0, column=6, sticky="ew", pady=3)
+        lbl_date.grid(row=0, column=3, sticky="w", padx=(14, 8))
+        e_date.grid(row=0, column=4, sticky="ew", pady=3)
+        lbl_subtitle.grid(row=1, column=1, sticky="nw", padx=(0, 8), pady=(9, 0))
+        subtitle_flow.grid(row=1, column=2, columnspan=5, sticky="ew", pady=(4, 0))
         bullets_section.pack(fill="x")
 
     def update_single_collapse_ui():
         if var.get():
-            fields.columnconfigure(6, weight=0)
-            lbl_date.grid(row=0, column=5, sticky="w", padx=(14, 8))
-            e_date.grid(row=0, column=6, sticky="ew", pady=3)
+            fields.columnconfigure(4, weight=0)
+            lbl_date.grid(row=0, column=3, sticky="w", padx=(14, 8))
+            e_date.grid(row=0, column=4, sticky="ew", pady=3)
+            lbl_subtitle.grid(row=1, column=1, sticky="nw", padx=(0, 8), pady=(9, 0))
+            subtitle_flow.grid(row=1, column=2, columnspan=5, sticky="ew", pady=(4, 0))
             bullets_section.pack(fill="x")
             card.set_padding(pady=12)
             status_lbl.configure(text="")
             e_title.configure(fg=FG)
-            e_subtitle.configure(fg=FG)
             e_date.configure(fg=FG)
+            subtitle_flow.reflow()
         else:
-            fields.columnconfigure(6, weight=1)
+            fields.columnconfigure(4, weight=1)
             lbl_date.grid_remove()
             e_date.grid_remove()
+            lbl_subtitle.grid_remove()
+            subtitle_flow.grid_remove()
             bullets_section.pack_forget()
             card.set_padding(pady=8)
             status_lbl.configure(text="EXCLUDED")
             e_title.configure(fg=FG_DIM)
-            e_subtitle.configure(fg=FG_DIM)
         _autosave()
         update_scroll()
 
@@ -1601,10 +1614,12 @@ class SingleLineFlow(tk.Frame):
         old_h = getattr(self, "_last_reflow_h", None)
         self._last_reflow_h = total_h
         self.configure(height=total_h)
-        if hasattr(self.master, "master") and isinstance(self.master.master, RoundedCard):
-            self.master.master._sync_height()
-        elif hasattr(self.master, "_sync_height"):
-            self.master._sync_height()
+        w = self.master
+        while w is not None:
+            if isinstance(w, RoundedCard):
+                w.inner.update_idletasks()
+                w._sync_height()
+            w = getattr(w, "master", None)
         if old_h is not None and old_h != total_h:
             update_scroll()
 
@@ -2558,11 +2573,6 @@ def show_compiler_install_dialog(tex_path=None):
         btn_frame, "Close", dialog.destroy, parent_bg=BG_SECTION,
         bg=BG_ITEM, fg=FG, border=BORDER_ITEM, font=F_BTN_B, padx=16, pady=6
     ).pack(side="right")
-
-def recompile_for_preview():
-    save_master_yaml(show_popup=False, recompile_preview=False)
-    success, pdf_path, tex_path, err = compile_resume_pdf()
-    return (success, pdf_path, err)
 
 def on_preview_click():
     if not save_master_yaml(show_popup=False, recompile_preview=False):
