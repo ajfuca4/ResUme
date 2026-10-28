@@ -20,15 +20,28 @@ from jinja2 import Environment, FileSystemLoader
 from ui_widgets import *  # dark theme palette, fonts, RoundedCard, PillButton, Toggle, inputs
 from pdf_preview import PDFPreviewPane, PDFPreviewWindow
 
-# 1. Load or initialize master YAML file
+# Resume content lives next to the app. example.yaml is the committed sample.
+# master.yaml is created only after the user edits, and stays gitignored.
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+MASTER_YAML = os.path.join(APP_DIR, "master.yaml")
+EXAMPLE_YAML = os.path.join(APP_DIR, "example.yaml")
+
+
+def _read_yaml(path):
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
 def load_data():
-    if os.path.exists("master.yaml"):
-        with open("master.yaml", "r", encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
+    """Load master.yaml, or the example sample when the user has not edited yet."""
+    if os.path.exists(MASTER_YAML):
+        data = _read_yaml(MASTER_YAML)
+    elif os.path.exists(EXAMPLE_YAML):
+        data = _read_yaml(EXAMPLE_YAML)
     else:
         data = {}
 
-    # If sections is not already structured in master.yaml, convert/initialize it
+    # Older files stored jobs under `experiences` instead of `sections`.
     if "sections" not in data:
         exp_entries = []
         for job in data.get("experiences", []):
@@ -37,6 +50,7 @@ def load_data():
                 for b in job.get("bullets", [])
             ]
             exp_entries.append({
+                "type": "dual-line",
                 "enabled": True,
                 "field1": job.get("title", ""),
                 "field2": job.get("dates", ""),
@@ -44,93 +58,21 @@ def load_data():
                 "field4": job.get("location", ""),
                 "bullets": bullets
             })
+        data["sections"] = [{
+            "title": "Experience",
+            "enabled": True,
+            "entries": exp_entries,
+            "simple_lines": [],
+        }] if exp_entries else []
 
-        default_sections = [
-            {
-                "title": "Education",
-                "enabled": True,
-                "entries": [
-                    {
-                        "enabled": True,
-                        "field1": "Southwestern University",
-                        "field2": "Aug. 2018 -- May 2021",
-                        "field3": "Bachelor of Arts in Computer Science, Minor in Business",
-                        "field4": "Georgetown, TX",
-                        "bullets": []
-                    },
-                    {
-                        "enabled": True,
-                        "field1": "Blinn College",
-                        "field2": "Aug. 2014 -- May 2018",
-                        "field3": "Associate's in Liberal Arts",
-                        "field4": "Bryan, TX",
-                        "bullets": []
-                    }
-                ],
-                "simple_lines": []
-            },
-            {
-                "title": "Experience",
-                "enabled": True,
-                "entries": exp_entries,
-                "simple_lines": []
-            },
-            {
-                "title": "Projects",
-                "enabled": True,
-                "entries": [
-                    {
-                        "type": "single-line",
-                        "enabled": True,
-                        "title": "Gitlytics",
-                        "subtitle": "Python, Flask, React, PostgreSQL, Docker",
-                        "date": "June 2020 -- Present",
-                        "bullets": [
-                            {"enabled": True, "text": "Developed a full-stack web application using with Flask serving a REST API with React as the frontend"},
-                            {"enabled": True, "text": "Implemented GitHub OAuth to get data from user’s repositories"},
-                            {"enabled": True, "text": "Visualized GitHub data to show collaboration"},
-                            {"enabled": True, "text": "Used Celery and Redis for asynchronous tasks"}
-                        ]
-                    },
-                    {
-                        "type": "single-line",
-                        "enabled": True,
-                        "title": "Simple Paintball",
-                        "subtitle": "Spigot API, Java, Maven, TravisCI, Git",
-                        "date": "May 2018 -- May 2020",
-                        "bullets": [
-                            {"enabled": True, "text": "Developed a Minecraft server plugin to entertain kids during free time for a previous job"},
-                            {"enabled": True, "text": "Published plugin to websites gaining 2K+ downloads and an average 4.5/5-star review"},
-                            {"enabled": True, "text": "Implemented continuous delivery using TravisCI to build the plugin upon new a release"},
-                            {"enabled": True, "text": "Collaborated with Minecraft server administrators to suggest features and get feedback about the plugin"}
-                        ]
-                    }
-                ],
-                "simple_lines": []
-            },
-            {
-                "title": "Technical Skills",
-                "enabled": True,
-                "entries": [],
-                "simple_lines": [
-                    {"enabled": True, "label": "Languages", "text": "Java, Python, C/C++, SQL (Postgres), JavaScript, HTML/CSS, R"},
-                    {"enabled": True, "label": "Frameworks", "text": "React, Node.js, Flask, JUnit, WordPress, Material-UI, FastAPI"},
-                    {"enabled": True, "label": "Developer Tools", "text": "Git, Docker, TravisCI, Google Cloud Platform, VS Code, Visual Studio, PyCharm, IntelliJ, Eclipse"},
-                    {"enabled": True, "label": "Libraries", "text": "pandas, NumPy, Matplotlib"}
-                ]
-            }
-        ]
-        data["sections"] = default_sections
-
-    # Header links (identifier shown on the resume + the URL it points to).
-    # Migrate the legacy `contact` block on first run.
+    # Header links. Migrate a legacy `contact` block when present.
     if "links" not in data:
         contact = data.pop("contact", {}) or {}
         links = []
         if contact.get("phone"):
             links.append({"enabled": True, "label": contact["phone"], "type": "phone"})
         if contact.get("email"):
-            links.append({"enabled": True, "label": contact["email"], "url": f"mailto:{contact['email']}"})
+            links.append({"enabled": True, "label": contact["email"], "url": f"mailto:{contact['email']}", "type": "email"})
         data["links"] = links
     else:
         for item in data.get("links", []):
@@ -138,9 +80,10 @@ def load_data():
                 item["type"] = "phone"
                 item.pop("url", None)
 
-    # Keep the header fields at the top of master.yaml
     ordered = {"name": data.pop("name", ""), "links": data.pop("links", [])}
     ordered.update(data)
+    ordered.setdefault("font_family", "Default (Computer Modern)")
+    ordered.setdefault("font_size", "10pt")
     return ordered
 
 master_data = load_data()
@@ -715,15 +658,25 @@ def extract_sections_from_ui():
         })
     return sections_list
 
+# True once the user changes the resume. Until then the window shows example.yaml
+# and master.yaml is left uncreated.
+_resume_edited = False
+
 # Autosave to master.yaml
-def save_master_yaml(show_popup=False, recompile_preview=True):
-    global _debounce_save_timer
+def save_master_yaml(show_popup=False, recompile_preview=True, edited=True):
+    global _debounce_save_timer, _resume_edited
+    if edited:
+        _resume_edited = True
     if _debounce_save_timer is not None:
         try:
             root.after_cancel(_debounce_save_timer)
         except Exception:
             pass
         _debounce_save_timer = None
+
+    # Opening the sample and closing it is not an edit.
+    if not _resume_edited and not os.path.exists(MASTER_YAML):
+        return True
 
     master_data["sections"] = extract_sections_from_ui()
     if header_widgets:
@@ -742,7 +695,7 @@ def save_master_yaml(show_popup=False, recompile_preview=True):
             master_data["font_size"] = header_widgets["size_combo"].get()
 
     try:
-        with open("master.yaml", "w", encoding="utf-8") as f:
+        with open(MASTER_YAML, "w", encoding="utf-8") as f:
             yaml.dump(master_data, f, sort_keys=False, allow_unicode=True)
         if recompile_preview:
             try:
@@ -768,11 +721,13 @@ _IGNORED_KEYSYMS = {
 
 def schedule_debounced_save(event=None):
     """Debounce saves: reset timer on keystrokes and only write to disk after 500ms of inactivity."""
-    global _debounce_save_timer, _save_indicator_timer
+    global _debounce_save_timer, _save_indicator_timer, _resume_edited
     if not _is_ui_initialized:
         return
     if event and event.keysym in _IGNORED_KEYSYMS:
         return
+
+    _resume_edited = True
 
     if autosave_lbl:
         autosave_lbl.configure(text="Saving...", fg=FG_MUTED)
@@ -837,10 +792,10 @@ def on_entry_return(event):
         pass
 
 def on_app_close():
-    """Ensure any pending debounced edits are flushed before window closes."""
+    """Flush a pending edit. Closing the untouched sample does not create master.yaml."""
     try:
         if _is_ui_initialized:
-            save_master_yaml(show_popup=False)
+            save_master_yaml(show_popup=False, edited=False)
     finally:
         root.destroy()
 

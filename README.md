@@ -10,7 +10,7 @@ As a student applying to a lot of different roles, tailoring a resume for each o
 
 I use it for my own applications. Clone the repo and you can do the same. Jake's Resume is the layout because automated resume parsers read it reliably.
 
-Edits autosave. The preview recompiles in the background, so the page updates as you work. Nothing is uploaded. Your resume text stays in `master.yaml` on this machine, and that file is gitignored.
+Edits autosave. The preview recompiles in the background, so the page updates as you work. Nothing is uploaded. Your resume text stays in `master.yaml` on this machine, and that file is gitignored. A fresh clone opens `example.yaml`, a sample resume under the name Anthony Fuca, and writes `master.yaml` the first time you change something.
 
 ## What you can do
 
@@ -63,8 +63,8 @@ Non-default fonts (Charter, Fira Sans, and the others) come from LaTeX packages.
 
 The window is split: the editor is on the left, the PDF is on the right.
 
-1. Replace the sample content. The first launch, when `master.yaml` does not exist yet, fills Education, Experience, Projects, and Technical Skills with the sample from Jake's template so the layout is visible immediately.
-2. Type in any field. After a short pause, or when the field loses focus, ResUme writes `master.yaml` and recompiles.
+1. The first launch shows the sample from `example.yaml`, with the name Anthony Fuca. Closing the window without changing anything leaves `master.yaml` uncreated.
+2. Type in a field, reorder an entry, or toggle something on or off. After a short pause, or when the field loses focus, ResUme creates `master.yaml` and recompiles. Later edits update that file.
 3. Use **+ New Section** for a section with your own title, then add dual-line entries, single-line entries, or skill lines inside it.
 4. Uncheck anything that does not belong on this application. It stays in the master file and is omitted from the PDF.
 5. **Download PDF** copies the compiled file into `~/Downloads` and leaves the working copy in `~/.resume_build`.
@@ -76,12 +76,13 @@ The status line on the preview shows `Compiling...` and then the time of the las
 
 | Path | What it is |
 | --- | --- |
-| `master.yaml` | Your resume. Created on first save. Gitignored. |
+| `example.yaml` | Sample resume, named Anthony Fuca. Committed. The window shows this until you edit. |
+| `master.yaml` | Your resume. Created on the first edit. Gitignored. |
 | `jakes-resume-tmpl.tex` | Jinja2 template. Editing it recompiles the preview. |
 | `~/.resume_build/` | Rendered `.tex` and the working PDF, named from your header (`Ada_Lovelace's_Resume.pdf`). |
 | `~/Downloads/` | PDFs written by **Download PDF**. |
 
-`master.yaml` is the source of truth. Build artifacts and downloads are derived from it.
+Once it exists, `master.yaml` is the source of truth. Build artifacts and downloads are derived from it. `example.yaml` is only the starting sample.
 
 ## Content shape
 

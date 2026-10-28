@@ -1,0 +1,213 @@
+name: Anthony Fuca
+links:
+- enabled: true
+  label: 123-456-7890
+  type: phone
+- enabled: true
+  label: anthony@example.ca
+  url: mailto:anthony@example.ca
+  type: email
+- enabled: true
+  label: linkedin.com/in/anthony
+  url: https://linkedin.com/in/anthony
+  type: link
+- enabled: true
+  label: github.com/anthony
+  url: https://github.com/anthony
+  type: link
+sections:
+- title: Education
+  enabled: true
+  entries:
+  - type: dual-line
+    enabled: true
+    field1: Southwestern University
+    field2: Georgetown, TX
+    field3: Bachelor of Arts in Computer Science, Minor in Business
+    field4: Aug. 2018 -- May 2021
+    bullets: []
+  - type: dual-line
+    enabled: true
+    field1: Blinn College
+    field2: Bryan, TX
+    field3: Associate's in Liberal Arts
+    field4: Aug. 2014 -- May 2018
+    bullets: []
+  simple_lines: []
+- title: Experience
+  enabled: true
+  entries:
+  - type: dual-line
+    enabled: true
+    field1: Undergraduate Research Assistant
+    field2: June 2020 -- Present
+    field3: Texas A&M University
+    field4: College Station, TX
+    bullets:
+    - enabled: true
+      text: Developed a REST API using FastAPI and PostgreSQL to store data from learning management systems
+    - enabled: true
+      text: Developed a full-stack web application using Flask, React, PostgreSQL and Docker to analyze GitHub data
+    - enabled: true
+      text: Explored ways to visualize GitHub collaboration in a classroom setting
+  - type: dual-line
+    enabled: true
+    field1: Information Technology Support Specialist
+    field2: Sep. 2018 -- Present
+    field3: Southwestern University
+    field4: Georgetown, TX
+    bullets:
+    - enabled: true
+      text: Communicate with managers to set up campus computers used on campus
+    - enabled: true
+      text: Assess and troubleshoot computer problems brought by students, faculty and staff
+    - enabled: true
+      text: Maintain upkeep of computers, classroom equipment, and 200 printers across campus
+  - type: dual-line
+    enabled: true
+    field1: Artificial Intelligence Research Assistant
+    field2: May 2019 -- July 2019
+    field3: Southwestern University
+    field4: Georgetown, TX
+    bullets:
+    - enabled: true
+      text: Explored methods to generate video game dungeons based off of \emph{The Legend of Zelda}
+    - enabled: true
+      text: Developed a game in Java to test the generated dungeons
+    - enabled: true
+      text: Contributed 50K+ lines of code to an established codebase via Git
+    - enabled: true
+      text: Conducted a human subject study to determine which video game dungeon generation technique is enjoyable
+    - enabled: true
+      text: Wrote an 8-page paper and gave multiple presentations on-campus
+    - enabled: true
+      text: Presented virtually to the World Conference on Computational Intelligence
+  simple_lines: []
+- title: Projects
+  enabled: true
+  entries:
+  - type: single-line
+    enabled: true
+    title: Gitlytics
+    subtitle_items:
+    - enabled: true
+      text: Python
+    - enabled: true
+      text: Flask
+    - enabled: true
+      text: React
+    - enabled: true
+      text: PostgreSQL
+    - enabled: true
+      text: Docker
+    subtitle: Python, Flask, React, PostgreSQL, Docker
+    date: June 2020 -- Present
+    bullets:
+    - enabled: true
+      text: Developed a full-stack web application using with Flask serving a REST API with React as the frontend
+    - enabled: true
+      text: Implemented GitHub OAuth to get data from user’s repositories
+    - enabled: true
+      text: Visualized GitHub data to show collaboration
+    - enabled: true
+      text: Used Celery and Redis for asynchronous tasks
+  - type: single-line
+    enabled: true
+    title: Simple Paintball
+    subtitle_items:
+    - enabled: true
+      text: Spigot API
+    - enabled: true
+      text: Java
+    - enabled: true
+      text: Maven
+    - enabled: true
+      text: TravisCI
+    - enabled: true
+      text: Git
+    subtitle: Spigot API, Java, Maven, TravisCI, Git
+    date: May 2018 -- May 2020
+    bullets:
+    - enabled: true
+      text: Developed a Minecraft server plugin to entertain kids during free time for a previous job
+    - enabled: true
+      text: Published plugin to websites gaining 2K+ downloads and an average 4.5/5-star review
+    - enabled: true
+      text: Implemented continuous delivery using TravisCI to build the plugin upon new a release
+    - enabled: true
+      text: Collaborated with Minecraft server administrators to suggest features and get feedback about the plugin
+  simple_lines: []
+- title: Technical Skills
+  enabled: true
+  entries: []
+  simple_lines:
+  - enabled: true
+    label: Languages
+    items:
+    - enabled: true
+      text: Java
+    - enabled: true
+      text: Python
+    - enabled: true
+      text: C/C++
+    - enabled: true
+      text: SQL (Postgres)
+    - enabled: true
+      text: JavaScript
+    - enabled: true
+      text: HTML/CSS
+    - enabled: true
+      text: R
+    text: Java, Python, C/C++, SQL (Postgres), JavaScript, HTML/CSS, R
+  - enabled: true
+    label: Frameworks
+    items:
+    - enabled: true
+      text: React
+    - enabled: true
+      text: Node.js
+    - enabled: true
+      text: Flask
+    - enabled: true
+      text: JUnit
+    - enabled: true
+      text: WordPress
+    - enabled: true
+      text: Material-UI
+    - enabled: true
+      text: FastAPI
+    text: React, Node.js, Flask, JUnit, WordPress, Material-UI, FastAPI
+  - enabled: true
+    label: Developer Tools
+    items:
+    - enabled: true
+      text: Git
+    - enabled: true
+      text: Docker
+    - enabled: true
+      text: TravisCI
+    - enabled: true
+      text: Google Cloud Platform
+    - enabled: true
+      text: VS Code
+    - enabled: true
+      text: Visual Studio
+    - enabled: true
+      text: PyCharm
+    - enabled: true
+      text: IntelliJ
+    - enabled: true
+      text: Eclipse
+    text: Git, Docker, TravisCI, Google Cloud Platform, VS Code, Visual Studio, PyCharm, IntelliJ, Eclipse
+  - enabled: true
+    label: Libraries
+    items:
+    - enabled: true
+      text: pandas
+    - enabled: true
+      text: NumPy
+    - enabled: true
+      text: Matplotlib
+    text: pandas, NumPy, Matplotlib
+font_family: Default (Computer Modern)
+font_size: 10pt
